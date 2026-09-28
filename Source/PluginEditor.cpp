@@ -228,11 +228,11 @@ void VocalForgeAudioProcessorEditor::drawPitchGraph(juce::Graphics& g,juce::Rect
     g.setColour(juce::Colour(0xff09131b)); g.fillRoundedRectangle(r,6.0f);
     constexpr float low=24.0f, high=96.0f;
     g.setColour(juce::Colour(0xff21333f));
-    for(int i=0;i<=4;++i)
+    for(int i=0;i<=6;++i)
     {
-        const float y=r.getBottom()-i*r.getHeight()/4.0f;
+        const float y=r.getBottom()-i*r.getHeight()/6.0f;
         g.drawHorizontalLine((int)y,r.getX(),r.getRight());
-        text(g,"C"+juce::String(2+i),{r.getX()+6,y-9,28,18},9,MUTED);
+        text(g,"C"+juce::String(1+i),{r.getX()+6,y-9,28,18},9,MUTED);
     }
     const float detected=processor.getDetectedMidi(), target=processor.getTargetMidi();
     auto py=[&](float midi){ return r.getBottom()-juce::jlimit(24.0f,96.0f,midi-24.0f)/72.0f*r.getHeight(); };
