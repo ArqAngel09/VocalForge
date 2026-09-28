@@ -229,6 +229,7 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     float sat = useSmart ? smartDrive.load(std::memory_order_relaxed) : value("drive");
     float deess = useSmart ? smartDeess.load(std::memory_order_relaxed) : value("deess");
     float space = useSmart ? smartSpace.load(std::memory_order_relaxed) : value("space");
+    const float delay = value("delay");
 
     switch (style)
     {
@@ -390,7 +391,7 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     if (delay > 0.01f && delayBuffer.getNumSamples() > n)
     {
         const int delaySamples = juce::jlimit(1, delayBuffer.getNumSamples() - 1,
-            (int)std::round((0.12 + (delay / 100.0) * 0.38) * currentSampleRate));
+            (int)std::round((0.12 + (delay / 100.0f) * 0.38) * currentSampleRate));
         const float mix = delayMix.getNextValue();
         for (int i = 0; i < n; ++i)
         {
