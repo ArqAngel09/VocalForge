@@ -8,9 +8,17 @@ on:
     tags: ['v*']
   workflow_dispatch:
 
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
 jobs:
   build-windows:
     runs-on: windows-latest
+    env:
+      VOCALFORGE_SIGNING_ENABLED: ${{ vars.VOCALFORGE_SIGNING_ENABLED }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -35,6 +43,66 @@ jobs:
           if (-not $iscc) { throw "Inno Setup compiler (ISCC.exe) was not found." }
           & $iscc installer\VocalForge.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Sign Windows release files
+        if: env.VOCALFORGE_SIGNING_ENABLED == 'true'
+        shell: powershell
+        env:
+          VOCALFORGE_CERTIFICATE_BASE64: ${{ secrets.VOCALFORGE_CERTIFICATE_BASE64 }}
+          VOCALFORGE_CERTIFICATE_PASSWORD: ${{ secrets.VOCALFORGE_CERTIFICATE_PASSWORD }}
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          if ([string]::IsNullOrWhiteSpace($env:VOCALFORGE_CERTIFICATE_BASE64)) {
+            throw "VOCALFORGE_CERTIFICATE_BASE64 is not configured."
+          }
+          if ([string]::IsNullOrWhiteSpace($env:VOCALFORGE_CERTIFICATE_PASSWORD)) {
+            throw "VOCALFORGE_CERTIFICATE_PASSWORD is not configured."
+          }
+
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if (-not $signtool) {
+            throw "SignTool was not found on the Windows runner."
+          }
+
+          $pfx = Join-Path $env:RUNNER_TEMP "vocalforge-signing.pfx"
+          [IO.File]::WriteAllBytes(
+            $pfx,
+            [Convert]::FromBase64String($env:VOCALFORGE_CERTIFICATE_BASE64)
+          )
+
+          $installer = (Resolve-Path "installer\Output\VocalForge-Windows-Installer.exe").Path
+          & $signtool.FullName sign /fd SHA256 /tr "https://timestamp.digicert.com" /td SHA256 /f $pfx /p $env:VOCALFORGE_CERTIFICATE_PASSWORD /d "VocalForge" $installer
+          if ($LASTEXITCODE -ne 0) { throw "Failed to sign VocalForge installer." }
+
+          $vst3Root = (Resolve-Path "build\VocalForge_artefacts\Release\VST3\VocalForge.vst3").Path
+          $vst3Files = Get-ChildItem $vst3Root -Recurse -File | Where-Object { $_.Extension -in ".dll", ".exe" }
+          foreach ($file in $vst3Files) {
+            & $signtool.FullName sign /fd SHA256 /tr "https://timestamp.digicert.com" /td SHA256 /f $pfx /p $env:VOCALFORGE_CERTIFICATE_PASSWORD /d "VocalForge VST3" $file.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Failed to sign $($file.FullName)." }
+          }
+
+          & $signtool.FullName verify /pa /all $installer
+          if ($LASTEXITCODE -ne 0) { throw "Installer signature verification failed." }
+
+          foreach ($file in $vst3Files) {
+            & $signtool.FullName verify /pa /all $file.FullName
+            if ($LASTEXITCODE -ne 0) { throw "VST3 signature verification failed for $($file.FullName)." }
+          }
+
+          Remove-Item $pfx -Force
+
+      - name: Generate installer provenance attestation
+        uses: actions/attest@v4
+        with:
+          subject-path: installer\Output\VocalForge-Windows-Installer.exe
+
+      - name: Generate VST3 provenance attestation
+        uses: actions/attest@v4
+        with:
+          subject-path: build\VocalForge_artefacts\Release\VST3\VocalForge.vst3\**\*.dll
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
