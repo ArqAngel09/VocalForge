@@ -31,8 +31,8 @@ AMRVocalLookAndFeel::AMRVocalLookAndFeel()
 void AMRVocalLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int w, int h,
                                             float pos, float start, float end, juce::Slider& s)
 {
-    const float cx = x + w * .5f, cy = y + h * .45f;
-    const float r = juce::jmin(w, h) * .27f;
+    const float cx = x + w * .5f, cy = y + h * .36f;
+    const float r = juce::jmin(w, h) * .24f;
     const float a = start + pos * (end - start);
     const auto accent = s.getName() == "Saturation" ? PURPLE : CYAN;
 
@@ -228,8 +228,8 @@ void VocalForgeAudioProcessorEditor::drawKnobInfo(juce::Graphics& g,juce::Slider
 {
     auto r=s.getBounds().toFloat();
     text(g,s.getName(),{r.getX(),r.getY()-2,r.getWidth(),18},11,WHITE,juce::Justification::centred);
-    text(g,valueText(s),{r.getX(),r.getBottom()-36,r.getWidth(),18},13,WHITE,juce::Justification::centred);
-    text(g,caption,{r.getX(),r.getBottom()-18,r.getWidth(),16},8.5f,MUTED,juce::Justification::centred);
+    text(g,valueText(s),{r.getX(),r.getBottom()-34,r.getWidth(),18},12,WHITE,juce::Justification::centred);
+    text(g,caption,{r.getX(),r.getBottom()-16,r.getWidth(),14},8.5f,MUTED,juce::Justification::centred);
 }
 
 void VocalForgeAudioProcessorEditor::drawPitchGraph(juce::Graphics& g,juce::Rectangle<float> r)
