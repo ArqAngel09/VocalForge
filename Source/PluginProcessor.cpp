@@ -34,7 +34,8 @@ APVTS::ParameterLayout VocalForgeAudioProcessor::createParameterLayout()
     p.push_back(std::make_unique<juce::AudioParameterFloat>("deess", "De-Esser", juce::NormalisableRange<float>(0.f, 100.f, 0.01f), 32.f));
     p.push_back(std::make_unique<juce::AudioParameterFloat>("space", "Space", juce::NormalisableRange<float>(0.f, 100.f, 0.01f), 14.f));
     p.push_back(std::make_unique<juce::AudioParameterFloat>("delay", "Delay", juce::NormalisableRange<float>(0.f, 100.f, 0.01f), 0.f));
-    p.push_back(std::make_unique<juce::AudioParameterFloat>("output", "Output", juce::NormalisableRange<float>(-12.f, 6.f, 0.01f), -0.8f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("output", "Output", juce::NormalisableRange<float>(-12.f, 6.f, 0.01f), 0.f));
+    p.push_back(std::make_unique<juce::AudioParameterBool>("autoGain", "Auto Gain Match", true));
 
     // Fresh-style functional modules, implemented natively for AMR.
     p.push_back(std::make_unique<juce::AudioParameterFloat>("magic", "Magic", juce::NormalisableRange<float>(0.f, 100.f, 0.1f), 26.8f));
@@ -88,6 +89,8 @@ void VocalForgeAudioProcessor::prepareToPlay(double sr, int samplesPerBlock)
     inputGain.reset(sr, 0.03);
     outputGain.reset(sr, 0.03);
     vocalMakeupGain.reset(sr, 0.05);
+    autoGainTrim.reset(sr, 0.08);
+    autoGainTrim.setCurrentAndTargetValue(1.0f);
     drive.reset(sr, 0.03);
     reverbMix.reset(sr, 0.05);
     delayMix.reset(sr, 0.05);
@@ -259,9 +262,11 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     if (n <= 0 || ch == 0) return;
 
     double inSq = 0.0;
+    float inPeak = 0.0f;
     for (int c = 0; c < ch; ++c)
-        for (int i = 0; i < n; ++i) { const float x = buffer.getSample(c, i); inSq += (double)x * x; }
-    inputDb.store((float) juce::Decibels::gainToDecibels((float) std::sqrt(inSq / (double) std::max(1, n * ch)), -100.0f), std::memory_order_relaxed);
+        for (int i = 0; i < n; ++i) { const float x = buffer.getSample(c, i); inSq += (double)x * x; inPeak = std::max(inPeak, std::abs(x)); }
+    const float inRms = (float) std::sqrt(inSq / (double) std::max(1, n * ch));
+    inputDb.store(juce::Decibels::gainToDecibels(inRms, -100.0f), std::memory_order_relaxed);
 
     auto value = [this](const char* id) { return apvts.getRawParameterValue(id)->load(std::memory_order_relaxed); };
 
@@ -302,6 +307,8 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     const float deessFocus = value("deessFocus");
     const float compAttack = value("compAttack");
     const float compRelease = value("compRelease");
+    const float outputDbParam = value("output");
+    const bool autoGain = value("autoGain") > 0.5f;
 
     switch (style)
     {
@@ -374,9 +381,9 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     const float ratio = colorRatio + effectiveComp * 0.018f;
     // Never add makeup gain in the normal/default path. Smart Mix can add
     // controlled makeup only after the user explicitly runs the analysis.
-    const float makeupDb = useSmart ? juce::jmap(effectiveComp, 20.0f, 82.0f, 1.0f, 3.0f) : 0.0f;
-    vocalMakeupGain.setTargetValue(juce::Decibels::decibelsToGain(makeupDb));
-    const float makeupGain = vocalMakeupGain.getNextValue();
+    // Compression never adds hidden makeup gain. Any loudness compensation is handled
+    // by the explicit Output control and the optional Auto Gain Match stage below.
+    const float makeupGain = 1.0f;
     if (effectiveComp != lastComp || !filtersInitialised)
     {
         compressorL.setThreshold(threshold); compressorR.setThreshold(threshold);
@@ -552,10 +559,47 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
             buffer.setSample(c, i, buffer.getSample(c, i) * g);
     }
 
-    double outSq = 0.0;
+    // Professional gain staging: with Auto Gain Match enabled, processing may never
+    // create an unexpected level increase at the plugin output. Explicit Output gain
+    // remains respected, while the guard only attenuates excess level.
+    double outSqPreGuard = 0.0;
+    float outPeakPreGuard = 0.0f;
     for (int c = 0; c < ch; ++c)
-        for (int i = 0; i < n; ++i) { const float x = buffer.getSample(c, i); outSq += (double)x * x; }
-    outputDb.store((float) juce::Decibels::gainToDecibels((float) std::sqrt(outSq / (double) std::max(1, n * ch)), -100.0f), std::memory_order_relaxed);
+        for (int i = 0; i < n; ++i)
+        {
+            const float x = buffer.getSample(c, i);
+            outSqPreGuard += (double) x * x;
+            outPeakPreGuard = std::max(outPeakPreGuard, std::abs(x));
+        }
+
+    const float outRmsPreGuard = (float) std::sqrt(outSqPreGuard / (double) std::max(1, n * ch));
+    const float requestedLinear = juce::Decibels::decibelsToGain(outputDbParam);
+    const float targetRms = std::max(1.0e-5f, inRms * requestedLinear * 1.01f);
+    const float targetPeak = std::max(1.0e-4f, inPeak * requestedLinear * 0.98f);
+    float guardGain = 1.0f;
+    if (autoGain && inRms > 1.0e-5f && outRmsPreGuard > targetRms)
+        guardGain = std::min(guardGain, targetRms / outRmsPreGuard);
+    if (autoGain && inPeak > 1.0e-5f && outPeakPreGuard > targetPeak)
+        guardGain = std::min(guardGain, targetPeak / outPeakPreGuard);
+    guardGain = juce::jlimit(0.05f, 1.0f, guardGain);
+    autoGainTrim.setTargetValue(autoGain ? guardGain : 1.0f);
+
+    double outSq = 0.0;
+    float outPeak = 0.0f;
+    for (int i = 0; i < n; ++i)
+    {
+        const float trim = autoGainTrim.getNextValue();
+        for (int c = 0; c < ch; ++c)
+        {
+            const float x = buffer.getSample(c, i) * trim;
+            buffer.setSample(c, i, x);
+            outSq += (double) x * x;
+            outPeak = std::max(outPeak, std::abs(x));
+        }
+    }
+    const float outRms = (float) std::sqrt(outSq / (double) std::max(1, n * ch));
+    outputDb.store(juce::Decibels::gainToDecibels(outRms, -100.0f), std::memory_order_relaxed);
+    gainMatchDb.store(juce::Decibels::gainToDecibels(guardGain, -60.0f), std::memory_order_relaxed);
 }
 
 void VocalForgeAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
