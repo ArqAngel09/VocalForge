@@ -16,7 +16,7 @@ static bool isInScale(int pc, int root, int type)
 }
 }
 
-void VocalPitchCorrector::prepare(double sr, int)
+void VocalPitchCorrector::prepare(double sr, int maxBlockSize)
 {
     sampleRate_ = sr;
     grainSize_ = juce::jlimit(512, 2048, (int) std::round(sr * 0.02322));
@@ -25,7 +25,9 @@ void VocalPitchCorrector::prepare(double sr, int)
     while (ringSize_ < grainSize_ * 8) ringSize_ <<= 1;
     ringMask_ = ringSize_ - 1;
     ring_.assign((size_t) ringSize_, 0.0f);
-    grainBuffer_.assign((size_t) grainSize_, 0.0f);
+    analysisBuffer_.assign((size_t) grainSize_, 0.0f);
+    outBuffer_.setSize(1, maxBlockSize);
+    weightBuffer_.setSize(1, maxBlockSize);
     reset();
 }
 
@@ -111,23 +113,20 @@ void VocalPitchCorrector::process(juce::AudioBuffer<float>& buffer, int numSampl
     if (!enabled_ || numSamples <= 0 || buffer.getNumChannels() <= 0) return;
 
     const int channels = juce::jmin(2, buffer.getNumChannels());
-    std::vector<float> mono((size_t) numSamples);
     for (int i = 0; i < numSamples; ++i)
     {
         float s = buffer.getSample(0, i);
         if (channels > 1) s = 0.5f * (s + buffer.getSample(1, i));
-        mono[(size_t)i] = s;
         ring_[(size_t)writePos_] = s;
         writePos_ = (writePos_ + 1) & ringMask_;
     }
 
     const int analysisN = juce::jmin(grainSize_, ringSize_ - 1);
-    std::vector<float> analysis((size_t) analysisN);
     int p = (writePos_ - analysisN + ringSize_) & ringMask_;
-    for (int i = 0; i < analysisN; ++i) analysis[(size_t)i] = ring_[(size_t)((p + i) & ringMask_)];
+    for (int i = 0; i < analysisN; ++i) analysisBuffer_[(size_t)i] = ring_[(size_t)((p + i) & ringMask_)];
 
     float conf = 0.0f;
-    const float hz = detectPitch(analysis.data(), analysisN, conf);
+    const float hz = detectPitch(analysisBuffer_.data(), analysisN, conf);
     confidence_.store(conf);
     if (hz > 0.0f)
     {
@@ -143,12 +142,12 @@ void VocalPitchCorrector::process(juce::AudioBuffer<float>& buffer, int numSampl
         currentRatio_ = 1.0f + (currentRatio_ - 1.0f) * 0.995f;
     }
 
-    if (std::abs(currentRatio_ - 1.0f) < 0.002f) return;
-
     // Two-window OLA pitch shifter. It deliberately uses short grains so Live mode
     // remains responsive while overlap reduces the obvious "robot" stepping.
-    std::vector<float> out((size_t) numSamples, 0.0f);
-    std::vector<float> weight((size_t) numSamples, 0.0f);
+    auto* out = outBuffer_.getWritePointer(0);
+    auto* weight = weightBuffer_.getWritePointer(0);
+    juce::FloatVectorOperations::clear(out, numSamples);
+    juce::FloatVectorOperations::clear(weight, numSamples);
 
     for (int i = 0; i < numSamples; ++i)
     {
@@ -171,8 +170,8 @@ void VocalPitchCorrector::process(juce::AudioBuffer<float>& buffer, int numSampl
             float s = ring_[(size_t)idx] + (ring_[(size_t)idx2] - ring_[(size_t)idx]) * frac;
             const float phase = (float)g.age / (float)grainSize_;
             const float w = std::sin(juce::MathConstants<float>::pi * phase);
-            out[(size_t)i] += s * w;
-            weight[(size_t)i] += w;
+            out[i] += s * w;
+            weight[i] += w;
             g.readPos += g.increment;
             ++g.age;
         }
