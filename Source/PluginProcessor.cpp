@@ -68,6 +68,10 @@ void VocalForgeAudioProcessor::prepareToPlay(double sr, int samplesPerBlock)
     progress.store(0.f);
     analysisReady.store(false);
     analysisRequested.store(false);
+    analysisRunning.store(false);
+    filtersInitialised = false;
+    reverbInitialised = false;
+    lastBodyDb = lastPresDb = lastAirDb = lastComp = lastSpace = 999.0f;
     deEssEnvelopeL = 0.0f;
     deEssEnvelopeR = 0.0f;
 }
@@ -84,6 +88,7 @@ bool VocalForgeAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts
 
 void VocalForgeAudioProcessor::analyseBlock(const juce::AudioBuffer<float>& b)
 {
+    if (!analysisRunning.load(std::memory_order_acquire)) return;
     const int n = b.getNumSamples();
     if (n <= 0 || b.getNumChannels() == 0 || analysis.seconds >= 15.0) return;
 
@@ -107,8 +112,11 @@ void VocalForgeAudioProcessor::analyseBlock(const juce::AudioBuffer<float>& b)
     analysis.seconds = (double) analysis.samples / currentSampleRate;
     progress.store((float) juce::jlimit(0.0, 1.0, analysis.seconds / 15.0));
 
-    if (analysis.seconds >= 15.0 && apvts.getRawParameterValue("auto")->load() > 0.5f)
+    if (analysis.seconds >= 15.0)
+    {
+        analysisRunning.store(false, std::memory_order_release);
         analysisReady.store(true, std::memory_order_release);
+    }
 }
 
 void VocalForgeAudioProcessor::triggerAnalysis()
@@ -173,7 +181,8 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         progress.store(0.0f, std::memory_order_relaxed);
     }
 
-    analyseBlock(buffer);
+    if (analysisRunning.load(std::memory_order_acquire))
+        analyseBlock(buffer);
     if (isAnalysisReady())
         applySmartMix();
 
@@ -235,16 +244,23 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     pitchCorrector.setScale(root, scale);
     pitchCorrector.process(buffer, n);
 
-    hpFilterL.coefficients = juce::dsp::IIR::Coefficients<float>::makeHighPass(currentSampleRate, 70.0);
-    hpFilterR.coefficients = hpFilterL.coefficients;
-    bodyFilterL.coefficients = juce::dsp::IIR::Coefficients<float>::makeLowShelf(currentSampleRate, 180.0, 0.65f, juce::Decibels::decibelsToGain(bodyDb));
-    bodyFilterR.coefficients = bodyFilterL.coefficients;
-    presenceFilterL.coefficients = juce::dsp::IIR::Coefficients<float>::makePeakFilter(currentSampleRate, 3200.0, 0.8f, juce::Decibels::decibelsToGain(presDb));
-    presenceFilterR.coefficients = presenceFilterL.coefficients;
-    airFilterL.coefficients = juce::dsp::IIR::Coefficients<float>::makeHighShelf(currentSampleRate, 9000.0, 0.7f, juce::Decibels::decibelsToGain(airDb));
-    airFilterR.coefficients = airFilterL.coefficients;
-    deEssFilterL.coefficients = juce::dsp::IIR::Coefficients<float>::makeHighPass(currentSampleRate, 5500.0);
-    deEssFilterR.coefficients = deEssFilterL.coefficients;
+    // Rebuild IIR coefficients only when a relevant parameter actually changes.
+    // Allocating new coefficient objects every audio block is unnecessarily expensive.
+    if (!filtersInitialised || bodyDb != lastBodyDb || presDb != lastPresDb || airDb != lastAirDb)
+    {
+        hpFilterL.coefficients = juce::dsp::IIR::Coefficients<float>::makeHighPass(currentSampleRate, 70.0);
+        hpFilterR.coefficients = hpFilterL.coefficients;
+        bodyFilterL.coefficients = juce::dsp::IIR::Coefficients<float>::makeLowShelf(currentSampleRate, 180.0, 0.65f, juce::Decibels::decibelsToGain(bodyDb));
+        bodyFilterR.coefficients = bodyFilterL.coefficients;
+        presenceFilterL.coefficients = juce::dsp::IIR::Coefficients<float>::makePeakFilter(currentSampleRate, 3200.0, 0.8f, juce::Decibels::decibelsToGain(presDb));
+        presenceFilterR.coefficients = presenceFilterL.coefficients;
+        airFilterL.coefficients = juce::dsp::IIR::Coefficients<float>::makeHighShelf(currentSampleRate, 9000.0, 0.7f, juce::Decibels::decibelsToGain(airDb));
+        airFilterR.coefficients = airFilterL.coefficients;
+        deEssFilterL.coefficients = juce::dsp::IIR::Coefficients<float>::makeHighPass(currentSampleRate, 5500.0);
+        deEssFilterR.coefficients = deEssFilterL.coefficients;
+        lastBodyDb = bodyDb; lastPresDb = presDb; lastAirDb = airDb;
+        filtersInitialised = true;
+    }
 
     const float threshold = -19.0f - comp * 0.09f;
     const float ratio = 1.25f + comp * 0.032f;
@@ -253,12 +269,18 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         : juce::jmap(comp, 0.0f, 100.0f, 0.0f, 4.0f);
     vocalMakeupGain.setTargetValue(juce::Decibels::decibelsToGain(makeupDb));
     const float makeupGain = vocalMakeupGain.getNextValue();
-    compressorL.setThreshold(threshold); compressorR.setThreshold(threshold);
-    compressorL.setRatio(ratio); compressorR.setRatio(ratio);
-    compressorL.setAttack(5.0f); compressorR.setAttack(5.0f);
-    compressorL.setRelease(85.0f); compressorR.setRelease(85.0f);
-    limiterL.setThreshold(-1.1f); limiterR.setThreshold(-1.1f);
-    limiterL.setRelease(70.0f); limiterR.setRelease(70.0f);
+    if (comp != lastComp || !filtersInitialised)
+    {
+        compressorL.setThreshold(threshold); compressorR.setThreshold(threshold);
+        compressorL.setRatio(ratio); compressorR.setRatio(ratio);
+        compressorL.setAttack(5.0f); compressorR.setAttack(5.0f);
+        lastComp = comp;
+    }
+    if (!filtersInitialised)
+    {
+        limiterL.setThreshold(-1.1f); limiterR.setThreshold(-1.1f);
+        limiterL.setRelease(70.0f); limiterR.setRelease(70.0f);
+    }
 
     auto processOne = [this, n, bodyDb, presDb, airDb, comp, sat, deess, makeupGain]
         (juce::AudioBuffer<float>& b, int c,
@@ -316,13 +338,18 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
                    deEssFilterL, compressorL, limiterL, deEssEnvelopeL);
     }
 
-    reverbMix.setTargetValue(space / 100.0f * 0.16f);
-    reverbParams.roomSize = 0.28f + space * 0.004f;
-    reverbParams.damping = 0.55f;
-    reverbParams.wetLevel = 0.62f;
-    reverbParams.dryLevel = 0.0f;
-    reverbParams.width = 0.9f;
-    reverb.setParameters(reverbParams);
+    if (!reverbInitialised || space != lastSpace)
+    {
+        reverbMix.setTargetValue(space / 100.0f * 0.16f);
+        reverbParams.roomSize = 0.28f + space * 0.004f;
+        reverbParams.damping = 0.55f;
+        reverbParams.wetLevel = 0.62f;
+        reverbParams.dryLevel = 0.0f;
+        reverbParams.width = 0.9f;
+        reverb.setParameters(reverbParams);
+        lastSpace = space;
+        reverbInitialised = true;
+    }
 
     if (space > 0.01f && ch > 1 && n <= wetBuffer.getNumSamples())
     {
