@@ -289,7 +289,7 @@ void VocalForgeAudioProcessorEditor::paint(juce::Graphics& g)
         g.setColour(i==3?juce::Colour(0xff2d8dff):CYAN); g.fillRoundedRectangle(rx+18,yy+22,(rightW-36)*metrics[i],5,3);
     }
     g.setColour(juce::Colour(0xff190c2c)); g.fillRoundedRectangle(rx+18,y+270,rightW-36,62,6);
-    for(int i=0;i<18;++i){ const float bh=22+34*std::abs(std::sin(i*0.72f+phase)); g.setColour(i%2?PURPLE:juce::Colour(0xff185eff)); g.fillRect(rx+24+i*(rightW-48)/18.0f,y+332-bh,5,bh); }
+    for(int i=0;i<18;++i){ const float bh=22+34*std::abs(std::sin(i*0.72f+phase)); g.setColour(i%2?PURPLE:juce::Colour(0xff185eff)); g.fillRect(rx+24+i*(rightW-48)/18.0f,y+332.0f-bh,5.0f,bh); }
 
     const float chainY=y+h+12, chainH=180;
     drawPanel(g,{a.getX(),chainY,a.getWidth(),chainH});
