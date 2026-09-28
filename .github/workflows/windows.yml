@@ -1,6 +1,8 @@
 name: Build VocalForge Windows
 
 on:
+  pull_request:
+    branches: ["main"]
   push:
     branches: ["main", "vocalforge-2.0"]
     tags: ['v*']

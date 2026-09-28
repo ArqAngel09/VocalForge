@@ -67,7 +67,8 @@ void VocalForgeAudioProcessor::prepareToPlay(double sr, int samplesPerBlock)
     progress.store(0.f);
     analysisReady.store(false);
     analysisRequested.store(false);
-    deEssEnvelope = 0.0f;
+    deEssEnvelopeL = 0.0f;
+    deEssEnvelopeR = 0.0f;
 }
 
 void VocalForgeAudioProcessor::releaseResources() {}
@@ -106,7 +107,7 @@ void VocalForgeAudioProcessor::analyseBlock(const juce::AudioBuffer<float>& b)
     progress.store((float) juce::jlimit(0.0, 1.0, analysis.seconds / 15.0));
 
     if (analysis.seconds >= 15.0 && apvts.getRawParameterValue("auto")->load() > 0.5f)
-        analysisReady.store(true);
+        analysisReady.store(true, std::memory_order_release);
 }
 
 void VocalForgeAudioProcessor::triggerAnalysis()
@@ -114,7 +115,8 @@ void VocalForgeAudioProcessor::triggerAnalysis()
     analysis.reset();
     progress.store(0.f);
     analysisReady.store(false);
-    analysisRequested.store(true);
+    analysisRequested.store(true, std::memory_order_release);
+    smartMixActive.store(false, std::memory_order_release);
 }
 
 float VocalForgeAudioProcessor::getAnalysisProgress() const { return progress.load(); }
@@ -143,46 +145,78 @@ void VocalForgeAudioProcessor::applySmartMix()
     const float air = (float) juce::jlimit(-1.0, 7.0, 1.8 + (bright - 0.35) * 2.4);
     const float deess = (float) juce::jlimit(15.0, 72.0, 28.0 + bright * 23.0);
     const float presence = (float) juce::jlimit(0.0, 5.5, 2.6 + (0.25 - bright) * 4.5);
+    const float driveValue = (float) (8.0 + juce::jlimit(0.0, 18.0, (crest - 3.0) * 2.2));
+    const float spaceValue = 12.0f + (float) juce::jlimit(0.0, 12.0, bright * 6.0);
 
-    auto set = [this](const char* id, float v)
-    {
-        if (auto* param = apvts.getParameter(id))
-            param->setValueNotifyingHost(param->getNormalisableRange().convertTo0to1(v));
-    };
-
-    set("body", body);
-    set("presence", presence);
-    set("air", air);
-    set("comp", comp);
-    set("deess", deess);
-    set("drive", (float) (8.0 + juce::jlimit(0.0, 18.0, (crest - 3.0) * 2.2)));
-    set("space", 12.0f + (float) juce::jlimit(0.0, 12.0, bright * 6.0));
-    set("output", -0.8f);
+    smartBody.store(body, std::memory_order_relaxed);
+    smartPresence.store(presence, std::memory_order_relaxed);
+    smartAir.store(air, std::memory_order_relaxed);
+    smartComp.store(comp, std::memory_order_relaxed);
+    smartDrive.store(driveValue, std::memory_order_relaxed);
+    smartDeess.store(deess, std::memory_order_relaxed);
+    smartSpace.store(spaceValue, std::memory_order_relaxed);
+    smartMixActive.store(true, std::memory_order_release);
 }
+
+
 
 void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
     juce::ScopedNoDenormals noDenormals;
-    if (analysisRequested.exchange(false)) analysis.reset();
+
+    if (analysisRequested.exchange(false, std::memory_order_acq_rel))
+    {
+        analysis.reset();
+        progress.store(0.0f, std::memory_order_relaxed);
+    }
 
     analyseBlock(buffer);
-    if (isAnalysisReady()) applySmartMix();
+    if (isAnalysisReady())
+        applySmartMix();
 
     const int n = buffer.getNumSamples();
     const int ch = buffer.getNumChannels();
     if (n <= 0 || ch == 0) return;
 
-    auto value = [this](const char* id) { return apvts.getRawParameterValue(id)->load(); };
+    auto value = [this](const char* id) { return apvts.getRawParameterValue(id)->load(std::memory_order_relaxed); };
+
     const float inDb = value("input");
     const float retune = value("retune") / 100.0f;
     const float speed = value("speed");
     const int root = (int) value("root");
     const int scale = (int) value("scale");
     const int mode = (int) value("mode");
+    const int style = (int) value("style");
+
+    const bool useSmart = smartMixActive.load(std::memory_order_acquire);
+
+    float bodyDb = useSmart ? smartBody.load(std::memory_order_relaxed) : value("body");
+    float presDb = useSmart ? smartPresence.load(std::memory_order_relaxed) : value("presence");
+    float airDb = useSmart ? smartAir.load(std::memory_order_relaxed) : value("air");
+    float comp = useSmart ? smartComp.load(std::memory_order_relaxed) : value("comp");
+    float sat = useSmart ? smartDrive.load(std::memory_order_relaxed) : value("drive");
+    float deess = useSmart ? smartDeess.load(std::memory_order_relaxed) : value("deess");
+    float space = useSmart ? smartSpace.load(std::memory_order_relaxed) : value("space");
+
+    switch (style)
+    {
+        case 0: break; // Clean
+        case 1: bodyDb += 0.8f; presDb -= 0.4f; break; // Warm
+        case 2: presDb += 0.9f; airDb += 1.1f; break; // Bright
+        case 3: presDb += 0.7f; comp += 10.0f; sat += 6.0f; deess += 4.0f; break; // Aggressive
+        default: break;
+    }
+
+    bodyDb = juce::jlimit(-6.0f, 6.0f, bodyDb);
+    presDb = juce::jlimit(-6.0f, 8.0f, presDb);
+    airDb = juce::jlimit(-6.0f, 10.0f, airDb);
+    comp = juce::jlimit(0.0f, 100.0f, comp);
+    sat = juce::jlimit(0.0f, 100.0f, sat);
+    deess = juce::jlimit(0.0f, 100.0f, deess);
+    space = juce::jlimit(0.0f, 100.0f, space);
 
     inputGain.setTargetValue(juce::Decibels::decibelsToGain(inDb));
     outputGain.setTargetValue(juce::Decibels::decibelsToGain(value("output")));
-    drive.setTargetValue(value("drive") / 100.0f);
 
     for (int i = 0; i < n; ++i)
     {
@@ -197,14 +231,6 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     pitchCorrector.setScale(root, scale);
     pitchCorrector.process(buffer, n);
 
-    const float bodyDb = value("body");
-    const float presDb = value("presence");
-    const float airDb = value("air");
-    const float comp = value("comp");
-    const float sat = value("drive");
-    const float deess = value("deess");
-    const float space = value("space");
-
     hpFilterL.coefficients = juce::dsp::IIR::Coefficients<float>::makeHighPass(currentSampleRate, 70.0);
     hpFilterR.coefficients = hpFilterL.coefficients;
     bodyFilterL.coefficients = juce::dsp::IIR::Coefficients<float>::makeLowShelf(currentSampleRate, 180.0, 0.65f, juce::Decibels::decibelsToGain(bodyDb));
@@ -217,44 +243,50 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     deEssFilterR.coefficients = deEssFilterL.coefficients;
 
     const float threshold = -19.0f - comp * 0.09f;
+    const float ratio = 1.25f + comp * 0.032f;
     compressorL.setThreshold(threshold); compressorR.setThreshold(threshold);
-    compressorL.setRatio(1.25f + comp * 0.032f); compressorR.setRatio(1.25f + comp * 0.032f);
+    compressorL.setRatio(ratio); compressorR.setRatio(ratio);
     compressorL.setAttack(5.0f); compressorR.setAttack(5.0f);
     compressorL.setRelease(85.0f); compressorR.setRelease(85.0f);
     limiterL.setThreshold(-1.1f); limiterR.setThreshold(-1.1f);
     limiterL.setRelease(70.0f); limiterR.setRelease(70.0f);
 
-    auto processOne = [this, n, bodyDb, presDb, airDb, comp, sat, deess](juce::AudioBuffer<float>& b, int c,
-                                                                          juce::dsp::IIR::Filter<float>& hp,
-                                                                          juce::dsp::IIR::Filter<float>& body,
-                                                                          juce::dsp::IIR::Filter<float>& pres,
-                                                                          juce::dsp::IIR::Filter<float>& air,
-                                                                          juce::dsp::IIR::Filter<float>& ds,
-                                                                          juce::dsp::Compressor<float>& compProc,
-                                                                          juce::dsp::Limiter<float>& lim)
+    auto processOne = [this, n, bodyDb, presDb, airDb, comp, sat, deess]
+        (juce::AudioBuffer<float>& b, int c,
+         juce::dsp::IIR::Filter<float>& hp,
+         juce::dsp::IIR::Filter<float>& body,
+         juce::dsp::IIR::Filter<float>& pres,
+         juce::dsp::IIR::Filter<float>& air,
+         juce::dsp::IIR::Filter<float>& ds,
+         juce::dsp::Compressor<float>& compProc,
+         juce::dsp::Limiter<float>& lim,
+         float& deEssEnvelope)
     {
         juce::dsp::AudioBlock<float> block(b.getArrayOfWritePointers() + c, 1, (size_t)n);
         juce::dsp::ProcessContextReplacing<float> ctx(block);
-        hp.process(ctx); body.process(ctx); pres.process(ctx); air.process(ctx);
+        hp.process(ctx);
+        body.process(ctx);
+        pres.process(ctx);
+        air.process(ctx);
         compProc.process(ctx);
 
         auto* data = b.getWritePointer(c);
         const float driveAmount = sat / 100.0f;
+        const float driveNorm = std::max(1.0f, std::tanh(1.0f + driveAmount * 2.2f));
+
         for (int i = 0; i < n; ++i)
         {
             const float x = data[i];
             const float shaped = std::tanh(x * (1.0f + driveAmount * 2.2f));
-            data[i] = shaped / std::max(1.0f, std::tanh(1.0f + driveAmount * 2.2f));
+            data[i] = shaped / driveNorm;
         }
 
-        // Musical de-essing: detect only the upper band and smoothly reduce it.
         for (int i = 0; i < n; ++i)
         {
             const float high = std::abs(ds.processSample(data[i]));
             const float target = juce::jlimit(0.0f, 0.62f, high * (deess / 100.0f) * 1.65f);
             deEssEnvelope = 0.992f * deEssEnvelope + 0.008f * target;
-            const float gain = 1.0f - deEssEnvelope;
-            data[i] *= gain;
+            data[i] *= (1.0f - deEssEnvelope);
         }
 
         juce::dsp::AudioBlock<float> block2(b.getArrayOfWritePointers() + c, 1, (size_t)n);
@@ -264,11 +296,16 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
 
     if (ch >= 2)
     {
-        processOne(buffer, 0, hpFilterL, bodyFilterL, presenceFilterL, airFilterL, deEssFilterL, compressorL, limiterL);
-        processOne(buffer, 1, hpFilterR, bodyFilterR, presenceFilterR, airFilterR, deEssFilterR, compressorR, limiterR);
+        processOne(buffer, 0, hpFilterL, bodyFilterL, presenceFilterL, airFilterL,
+                   deEssFilterL, compressorL, limiterL, deEssEnvelopeL);
+        processOne(buffer, 1, hpFilterR, bodyFilterR, presenceFilterR, airFilterR,
+                   deEssFilterR, compressorR, limiterR, deEssEnvelopeR);
     }
     else
-        processOne(buffer, 0, hpFilterL, bodyFilterL, presenceFilterL, airFilterL, deEssFilterL, compressorL, limiterL);
+    {
+        processOne(buffer, 0, hpFilterL, bodyFilterL, presenceFilterL, airFilterL,
+                   deEssFilterL, compressorL, limiterL, deEssEnvelopeL);
+    }
 
     reverbMix.setTargetValue(space / 100.0f * 0.16f);
     reverbParams.roomSize = 0.28f + space * 0.004f;
@@ -278,13 +315,15 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     reverbParams.width = 0.9f;
     reverb.setParameters(reverbParams);
 
-    if (space > 0.01f && ch > 1)
+    if (space > 0.01f && ch > 1 && n <= wetBuffer.getNumSamples())
     {
-        wetBuffer.makeCopyOf(buffer, true);
+        wetBuffer.copyFrom(0, 0, buffer, 0, 0, n);
+        wetBuffer.copyFrom(1, 0, buffer, 1, 0, n);
         reverb.processStereo(wetBuffer.getWritePointer(0), wetBuffer.getWritePointer(1), n);
-        const float wm = reverbMix.getNextValue();
+
         for (int i = 0; i < n; ++i)
         {
+            const float wm = reverbMix.getNextValue();
             buffer.addSample(0, i, wetBuffer.getSample(0, i) * wm);
             buffer.addSample(1, i, wetBuffer.getSample(1, i) * wm);
         }

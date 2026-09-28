@@ -5,11 +5,11 @@ VocalForgeAudioProcessorEditor::VocalForgeAudioProcessorEditor(VocalForgeAudioPr
 {
     setSize(900, 590);
 
-    title.setText("VOCALFORGE 2.0", juce::dontSendNotification);
+    title.setText("VOCALFORGE 2.1", juce::dontSendNotification);
     title.setFont(juce::Font(juce::FontOptions{}.withHeight(28.0f).withStyle("Bold")));
     addAndMakeVisible(title);
 
-    subtitle.setText("Natural pitch correction • adaptive vocal finishing", juce::dontSendNotification);
+    subtitle.setText("Natural pitch correction • adaptive vocal finishing • commercial release", juce::dontSendNotification);
     subtitle.setFont(juce::Font(juce::FontOptions{}.withHeight(14.0f)));
     addAndMakeVisible(subtitle);
 
