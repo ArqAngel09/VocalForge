@@ -337,7 +337,7 @@ void VocalForgeAudioProcessorEditor::paint(juce::Graphics& g)
         text(g,"TONO",{a.getCentreX()+20,y+82,100,18},10,CYAN2);
         text(g,"MIX",{a.getRight()-210,y+82,100,18},10,CYAN2);
         drawPitchGraph(g,{a.getX()+28,y+106,a.getWidth()-56,72});
-        drawTitle(g,"CONTROLES",{a.getX()+28,y+194,a.getWidth()-56,20});
+        drawTitle(g,"CONTROLES",a.getX()+28,y+194,a.getWidth()-56,20);
         text(g,"Retune",{a.getX()+62,y+224,90,18},10,MUTED,juce::Justification::centred);
         text(g,valueText(retune),{a.getX()+62,y+306,90,18},12,WHITE,juce::Justification::centred);
         text(g,"Speed",{a.getX()+205,y+224,90,18},10,MUTED,juce::Justification::centred);
