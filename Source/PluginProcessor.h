@@ -33,7 +33,7 @@ public:
     juce::AudioProcessorValueTreeState apvts;
 
     void triggerAnalysis();
-    bool isAnalysisReady() { return analysisReady.exchange(false); }
+    bool isAnalysisReady() { return analysisReady.exchange(false, std::memory_order_acq_rel); }
     float getAnalysisProgress() const;
     juce::String getAnalysisSummary() const;
     float getDetectedMidi() const noexcept { return pitchCorrector.getDetectedMidi(); }
@@ -69,7 +69,20 @@ private:
     VocalPitchCorrector pitchCorrector;
 
     juce::SmoothedValue<float> inputGain, outputGain, drive, reverbMix, deEssGain;
-    float deEssEnvelope = 0.0f;
+    float deEssEnvelopeL = 0.0f;
+    float deEssEnvelopeR = 0.0f;
+
+    // Smart Mix is computed once from the captured vocal profile and then consumed
+    // as lock-free values by the realtime thread. It never mutates host parameters.
+    std::atomic<bool> smartMixActive { false };
+    std::atomic<float> smartBody { 0.0f };
+    std::atomic<float> smartPresence { 2.0f };
+    std::atomic<float> smartAir { 2.0f };
+    std::atomic<float> smartComp { 52.0f };
+    std::atomic<float> smartDrive { 10.0f };
+    std::atomic<float> smartDeess { 32.0f };
+    std::atomic<float> smartSpace { 14.0f };
+
     std::atomic<float> progress { 0.0f };
     std::atomic<bool> analysisReady { false };
     std::atomic<bool> analysisRequested { false };
