@@ -11,7 +11,8 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(JUCE)
 
 juce_add_plugin(VocalForge
-    COMPANY_NAME "OpenAI Community"
+    COMPANY_NAME "VocalForge"
+    BUNDLE_ID "com.vocalforge.plugin"
     PLUGIN_MANUFACTURER_CODE VFor
     PLUGIN_CODE Vc01
     FORMATS VST3 Standalone
