@@ -367,7 +367,7 @@ void VocalForgeAudioProcessorEditor::paint(juce::Graphics& g)
         text(g,"MODE",{a.getX()+175,y+160,55,16},9,MUTED);
         text(g,"STYLE",{a.getX()+260,y+160,55,16},9,MUTED);
         text(g,"CADENA VOCAL",{a.getX()+30,y+204,180,20},12,CYAN2);
-        text(g,"Controles independientes",{a.getRight()-230,y+204,190,18},9,MUTED,juce::Justification::rightJustified);
+        text(g,"Controles independientes",{a.getRight()-230,y+204,190,18},9,MUTED,juce::Justification::right);
     }
 
 }
