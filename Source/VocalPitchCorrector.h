@@ -46,6 +46,8 @@ private:
     juce::AudioBuffer<float> outBuffer_;
     juce::AudioBuffer<float> weightBuffer_;
     std::vector<float> analysisBuffer_;
+    std::vector<float> differenceBuffer_;
+    std::vector<float> cmndfBuffer_;
 
     Grain grains_[2];
     float currentRatio_ = 1.0f;
