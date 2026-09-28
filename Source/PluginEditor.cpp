@@ -226,7 +226,7 @@ void VocalForgeAudioProcessorEditor::drawKnobInfo(juce::Graphics& g,juce::Slider
 void VocalForgeAudioProcessorEditor::drawPitchGraph(juce::Graphics& g,juce::Rectangle<float> r)
 {
     g.setColour(juce::Colour(0xff09131b)); g.fillRoundedRectangle(r,6.0f);
-    constexpr float low=24.0f, high=96.0f;
+    // Pitch display spans C1-C7 (24-96 MIDI).
     g.setColour(juce::Colour(0xff21333f));
     for(int i=0;i<=6;++i)
     {
