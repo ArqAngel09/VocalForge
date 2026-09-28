@@ -29,7 +29,7 @@ private:
         bool active = false;
     };
 
-    float detectPitch(float* x, int n, float& confidence) const noexcept;
+    float detectPitch(float* x, int n, float& confidence) noexcept;
     float quantizeMidi(float midi) const noexcept;
     float smoothTarget(float targetMidi, float detectedMidi, float confidence) noexcept;
     static float wrapMidiDistance(float a, float b) noexcept;
