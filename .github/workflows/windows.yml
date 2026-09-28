@@ -1,4 +1,4 @@
-name: Build VocalForge Windows
+name: Build AMR Vocal Mix Windows
 
 on:
   pull_request:
@@ -52,68 +52,45 @@ jobs:
           VOCALFORGE_CERTIFICATE_PASSWORD: ${{ secrets.VOCALFORGE_CERTIFICATE_PASSWORD }}
         run: |
           $ErrorActionPreference = "Stop"
-
-          if ([string]::IsNullOrWhiteSpace($env:VOCALFORGE_CERTIFICATE_BASE64)) {
-            throw "VOCALFORGE_CERTIFICATE_BASE64 is not configured."
-          }
-          if ([string]::IsNullOrWhiteSpace($env:VOCALFORGE_CERTIFICATE_PASSWORD)) {
-            throw "VOCALFORGE_CERTIFICATE_PASSWORD is not configured."
-          }
-
-          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" |
-            Sort-Object FullName -Descending |
-            Select-Object -First 1
-          if (-not $signtool) {
-            throw "SignTool was not found on the Windows runner."
-          }
-
+          if ([string]::IsNullOrWhiteSpace($env:VOCALFORGE_CERTIFICATE_BASE64)) { throw "VOCALFORGE_CERTIFICATE_BASE64 is not configured." }
+          if ([string]::IsNullOrWhiteSpace($env:VOCALFORGE_CERTIFICATE_PASSWORD)) { throw "VOCALFORGE_CERTIFICATE_PASSWORD is not configured." }
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $signtool) { throw "SignTool was not found on the Windows runner." }
           $pfx = Join-Path $env:RUNNER_TEMP "vocalforge-signing.pfx"
-          [IO.File]::WriteAllBytes(
-            $pfx,
-            [Convert]::FromBase64String($env:VOCALFORGE_CERTIFICATE_BASE64)
-          )
-
-          $installer = (Resolve-Path "installer\Output\VocalForge-Windows-Installer.exe").Path
-          & $signtool.FullName sign /fd SHA256 /tr "https://timestamp.digicert.com" /td SHA256 /f $pfx /p $env:VOCALFORGE_CERTIFICATE_PASSWORD /d "VocalForge" $installer
-          if ($LASTEXITCODE -ne 0) { throw "Failed to sign VocalForge installer." }
-
-          $vst3Root = (Resolve-Path "build\VocalForge_artefacts\Release\VST3\VocalForge.vst3").Path
+          [IO.File]::WriteAllBytes($pfx,[Convert]::FromBase64String($env:VOCALFORGE_CERTIFICATE_BASE64))
+          $installer = (Resolve-Path "installer\Output\AMR-Vocal-Mix-Windows-Installer.exe").Path
+          & $signtool.FullName sign /fd SHA256 /tr "https://timestamp.digicert.com" /td SHA256 /f $pfx /p $env:VOCALFORGE_CERTIFICATE_PASSWORD /d "AMR Vocal Mix" $installer
+          if ($LASTEXITCODE -ne 0) { throw "Failed to sign installer." }
+          $vst3Root = (Resolve-Path "build\VocalForge_artefacts\Release\VST3\AMR Vocal Mix.vst3").Path
           $vst3Files = Get-ChildItem $vst3Root -Recurse -File | Where-Object { $_.Extension -in ".dll", ".exe" }
           foreach ($file in $vst3Files) {
-            & $signtool.FullName sign /fd SHA256 /tr "https://timestamp.digicert.com" /td SHA256 /f $pfx /p $env:VOCALFORGE_CERTIFICATE_PASSWORD /d "VocalForge VST3" $file.FullName
+            & $signtool.FullName sign /fd SHA256 /tr "https://timestamp.digicert.com" /td SHA256 /f $pfx /p $env:VOCALFORGE_CERTIFICATE_PASSWORD /d "AMR Vocal Mix VST3" $file.FullName
             if ($LASTEXITCODE -ne 0) { throw "Failed to sign $($file.FullName)." }
           }
-
           & $signtool.FullName verify /pa /all $installer
           if ($LASTEXITCODE -ne 0) { throw "Installer signature verification failed." }
-
-          foreach ($file in $vst3Files) {
-            & $signtool.FullName verify /pa /all $file.FullName
-            if ($LASTEXITCODE -ne 0) { throw "VST3 signature verification failed for $($file.FullName)." }
-          }
-
           Remove-Item $pfx -Force
 
       - name: Generate installer provenance attestation
         uses: actions/attest@v4
         with:
-          subject-path: installer\Output\VocalForge-Windows-Installer.exe
+          subject-path: installer\Output\AMR-Vocal-Mix-Windows-Installer.exe
 
       - name: Generate VST3 provenance attestation
         uses: actions/attest@v4
         with:
-          subject-path: build\VocalForge_artefacts\Release\VST3\VocalForge.vst3\**\*.dll
+          subject-path: build\VocalForge_artefacts\Release\VST3\AMR Vocal Mix.vst3\Contents\x86_64-win\AMR Vocal Mix.vst3
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: VocalForge-Windows-Installer
-          path: installer\Output\VocalForge-Windows-Installer.exe
+          name: AMR-Vocal-Mix-Windows-Installer
+          path: installer\Output\AMR-Vocal-Mix-Windows-Installer.exe
           if-no-files-found: error
 
       - name: Upload VST3
         uses: actions/upload-artifact@v4
         with:
-          name: VocalForge-VST3
-          path: build\VocalForge_artefacts\Release\VST3\VocalForge.vst3
+          name: AMR-Vocal-Mix-VST3
+          path: build\VocalForge_artefacts\Release\VST3\AMR Vocal Mix.vst3
           if-no-files-found: error

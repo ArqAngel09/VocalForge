@@ -16,7 +16,7 @@ public:
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
 
-    const juce::String getName() const override { return "VocalForge"; }
+    const juce::String getName() const override { return "AMR Vocal Mix"; }
     bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
@@ -72,8 +72,6 @@ private:
     float deEssEnvelopeL = 0.0f;
     float deEssEnvelopeR = 0.0f;
 
-    // Smart Mix is computed once from the captured vocal profile and then consumed
-    // as lock-free values by the realtime thread. It never mutates host parameters.
     std::atomic<bool> smartMixActive { false };
     std::atomic<float> smartBody { 0.0f };
     std::atomic<float> smartPresence { 2.0f };
