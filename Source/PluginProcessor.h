@@ -39,6 +39,8 @@ public:
     float getDetectedMidi() const noexcept { return pitchCorrector.getDetectedMidi(); }
     float getTargetMidi() const noexcept { return pitchCorrector.getTargetMidi(); }
     float getPitchConfidence() const noexcept { return pitchCorrector.getConfidence(); }
+    float getInputDb() const noexcept { return inputDb.load(std::memory_order_relaxed); }
+    float getOutputDb() const noexcept { return outputDb.load(std::memory_order_relaxed); }
 
 private:
     struct Analysis
@@ -95,6 +97,8 @@ private:
     std::atomic<bool> analysisRequested { false };
     std::atomic<bool> analysisRunning { false };
     std::atomic<bool> bypass { false };
+    std::atomic<float> inputDb { -100.0f };
+    std::atomic<float> outputDb { -100.0f };
     Analysis analysis;
 
     float lastBodyDb = 999.0f, lastPresDb = 999.0f, lastAirDb = 999.0f;
