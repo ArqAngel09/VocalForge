@@ -260,7 +260,7 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     limiterL.setThreshold(-1.1f); limiterR.setThreshold(-1.1f);
     limiterL.setRelease(70.0f); limiterR.setRelease(70.0f);
 
-    auto processOne = [this, n, bodyDb, presDb, airDb, comp, sat, deess]
+    auto processOne = [this, n, bodyDb, presDb, airDb, comp, sat, deess, makeupGain]
         (juce::AudioBuffer<float>& b, int c,
          juce::dsp::IIR::Filter<float>& hp,
          juce::dsp::IIR::Filter<float>& body,
