@@ -29,6 +29,8 @@ void VocalPitchCorrector::prepare(double sr, int maxBlockSize)
 
     ring_.assign((size_t) ringSize_, 0.0f);
     analysisBuffer_.assign((size_t) grainSize_, 0.0f);
+    differenceBuffer_.assign((size_t) grainSize_ + 1, 0.0f);
+    cmndfBuffer_.assign((size_t) grainSize_ + 1, 1.0f);
 
     outBuffer_.setSize(1, juce::jmax(1, maxBlockSize));
     weightBuffer_.setSize(1, juce::jmax(1, maxBlockSize));
@@ -81,8 +83,10 @@ float VocalPitchCorrector::detectPitch(float* x, int n, float& confidence) const
     if (maxLag <= minLag + 2)
         return 0.0f;
 
-    std::vector<float> difference((size_t) maxLag + 1, 0.0f);
-    std::vector<float> cmndf((size_t) maxLag + 1, 1.0f);
+    auto* difference = differenceBuffer_.data();
+    auto* cmndf = cmndfBuffer_.data();
+    std::fill(difference, difference + maxLag + 1, 0.0f);
+    std::fill(cmndf, cmndf + maxLag + 1, 1.0f);
 
     for (int lag = minLag; lag <= maxLag; ++lag)
     {
@@ -92,7 +96,7 @@ float VocalPitchCorrector::detectPitch(float* x, int n, float& confidence) const
             const double delta = (double) x[i] - x[i + lag];
             d += delta * delta;
         }
-        difference[(size_t) lag] = (float) d;
+        difference[lag] = (float) d;
     }
 
     double running = 0.0;
@@ -107,14 +111,14 @@ float VocalPitchCorrector::detectPitch(float* x, int n, float& confidence) const
             continue;
 
         const float score = difference[(size_t) lag] * (float) lag / (float) running;
-        cmndf[(size_t) lag] = score;
+        cmndf[lag] = score;
 
         // Select the first sufficiently deep valley. This is the key octave
         // protection: the fundamental is preferred over its 2nd harmonic.
         if (score < yinThreshold)
         {
             int refined = lag;
-            while (refined + 1 <= maxLag && cmndf[(size_t) refined + 1] < cmndf[(size_t) refined])
+            while (refined + 1 <= maxLag && cmndf[refined + 1] < cmndf[refined])
                 ++refined;
             bestLag = refined;
             bestScore = cmndf[(size_t) refined];
@@ -134,9 +138,9 @@ float VocalPitchCorrector::detectPitch(float* x, int n, float& confidence) const
     double refinedLag = (double) bestLag;
     if (bestLag > minLag && bestLag < maxLag)
     {
-        const double ym = cmndf[(size_t) bestLag - 1];
-        const double y0 = cmndf[(size_t) bestLag];
-        const double yp = cmndf[(size_t) bestLag + 1];
+        const double ym = cmndf[bestLag - 1];
+        const double y0 = cmndf[bestLag];
+        const double yp = cmndf[bestLag + 1];
         const double denom = ym - 2.0 * y0 + yp;
         if (std::abs(denom) > 1.0e-9)
             refinedLag += 0.5 * (ym - yp) / denom;
