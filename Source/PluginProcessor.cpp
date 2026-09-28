@@ -121,11 +121,14 @@ void VocalForgeAudioProcessor::analyseBlock(const juce::AudioBuffer<float>& b)
 
 void VocalForgeAudioProcessor::triggerAnalysis()
 {
+    // Explicit user action starts a fresh 15-second capture.
+    // The analysis remains idle until this method is called.
     analysis.reset();
-    progress.store(0.f);
-    analysisReady.store(false);
-    analysisRequested.store(true, std::memory_order_release);
+    progress.store(0.0f, std::memory_order_release);
+    analysisReady.store(false, std::memory_order_release);
     smartMixActive.store(false, std::memory_order_release);
+    analysisRunning.store(true, std::memory_order_release);
+    analysisRequested.store(true, std::memory_order_release);
 }
 
 float VocalForgeAudioProcessor::getAnalysisProgress() const { return progress.load(); }
