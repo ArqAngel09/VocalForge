@@ -189,10 +189,10 @@ juce::String VocalForgeAudioProcessor::getAnalysisSummary() const
     const auto midi = pitchCorrector.getTargetMidi();
 
     if (p < 1.f)
-        return "Vocal profile: " + juce::String((int) std::round(p * 15.0f)) + "/15s";
+        return "AMR Intelligent Assist • " + juce::String((int) std::round(p * 15.0f)) + "/15s";
     if (conf > 0.18f && midi > 0.0f)
-        return "Pitch locked • confidence " + juce::String((int) std::round(conf * 100.0f)) + "%";
-    return "Vocal profile captured";
+        return "Intelligent Assist • Pitch locked • " + juce::String((int) std::round(conf * 100.0f)) + "%";
+    return "Intelligent Assist • Vocal profile captured";
 }
 
 void VocalForgeAudioProcessor::applySmartMix()
@@ -200,6 +200,7 @@ void VocalForgeAudioProcessor::applySmartMix()
     const double rms = analysis.samples > 0 ? std::sqrt(analysis.sumSq / (double) analysis.samples) : 0.1;
     const double crest = analysis.peak / std::max(0.0001, rms);
     const double bright = analysis.high / std::max(1.0, analysis.mid);
+    const float pitchConfidence = pitchCorrector.getConfidence();
 
     // Smart Mix may attenuate a hot recording, but never boosts the input stage.
     const float inputTrim = (float) juce::jlimit(-6.0, 0.0, 20.0 * std::log10(0.18 / std::max(0.025, rms)));
@@ -210,8 +211,16 @@ void VocalForgeAudioProcessor::applySmartMix()
     const float presence = (float) juce::jlimit(1.0, 5.5, 3.0 + (0.25 - bright) * 4.5);
     const float driveValue = (float) (8.0 + juce::jlimit(0.0, 18.0, (crest - 3.0) * 2.2));
     const float spaceValue = 12.0f + (float) juce::jlimit(0.0, 12.0, bright * 6.0);
+    const float adaptiveRetune = pitchConfidence > 0.18f
+        ? juce::jmap(juce::jlimit(0.18f, 0.92f, pitchConfidence), 0.18f, 0.92f, 38.0f, 72.0f)
+        : 34.0f;
+    const float adaptiveSpeed = pitchConfidence > 0.18f
+        ? juce::jmap(juce::jlimit(0.18f, 0.92f, pitchConfidence), 0.18f, 0.92f, 105.0f, 48.0f)
+        : 115.0f;
 
     smartInputTrim.store(inputTrim, std::memory_order_relaxed);
+    smartRetune.store(adaptiveRetune, std::memory_order_relaxed);
+    smartSpeed.store(adaptiveSpeed, std::memory_order_relaxed);
     smartBody.store(body, std::memory_order_relaxed);
     smartPresence.store(presence, std::memory_order_relaxed);
     smartAir.store(air, std::memory_order_relaxed);
@@ -271,14 +280,13 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     auto value = [this](const char* id) { return apvts.getRawParameterValue(id)->load(std::memory_order_relaxed); };
 
     const float inDb = value("input");
-    const float retune = value("retune") / 100.0f;
-    const float speed = value("speed");
+    const bool useSmart = smartMixActive.load(std::memory_order_acquire);
+    const float retune = (useSmart ? smartRetune.load(std::memory_order_relaxed) : value("retune")) / 100.0f;
+    const float speed = useSmart ? smartSpeed.load(std::memory_order_relaxed) : value("speed");
     const int root = (int) value("root");
     const int scale = (int) value("scale");
     const int mode = (int) value("mode");
     const int style = (int) value("style");
-
-    const bool useSmart = smartMixActive.load(std::memory_order_acquire);
 
     const float smartTrimDb = useSmart ? smartInputTrim.load(std::memory_order_relaxed) : 0.0f;
     float bodyDb = useSmart ? smartBody.load(std::memory_order_relaxed) : value("body");
