@@ -35,7 +35,7 @@ VocalForgeAudioProcessorEditor::VocalForgeAudioProcessorEditor(VocalForgeAudioPr
     scale.addItemList({ "Major","Minor","Chromatic" }, 1);
     mode.addItemList({ "Live","Studio" }, 1);
     style.addItemList({ "Clean","Warm","Bright","Aggressive" }, 1);
-    for (auto* c : { &key, &scale, &mode, &style }) { addAndMakeVisible(c); }
+    for (auto* c : { &key, &scale, &mode, &style }) addAndMakeVisible(c);
 
     keyAttach = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(processor.apvts, "root", key);
     scaleAttach = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(processor.apvts, "scale", scale);
@@ -84,16 +84,45 @@ void VocalForgeAudioProcessorEditor::paint(juce::Graphics& g)
 
     g.setColour(juce::Colour(0xffe8edf3));
     g.setFont(juce::Font(juce::FontOptions{}.withHeight(11.0f)));
-    g.drawFittedText("RETUNE", retune.getX(), retune.getY()-2, retune.getWidth(), 18, juce::Justification::centred, 1);
-    g.drawFittedText("SPEED", speed.getX(), speed.getY()-2, speed.getWidth(), 18, juce::Justification::centred, 1);
-
-    const juce::String names[] = { "BODY","PRESENCE","AIR","COMPRESSION","SATURATION","DE-ESSER","SPACE","OUTPUT" };
-    juce::Slider* ss[] = { &body,&presence,&air,&comp,&sat,&deess,&space,&output };
-    for (int i = 0; i < 8; ++i)
+    const juce::String names[] = { "RETUNE","SPEED","BODY","PRESENCE","AIR","COMPRESSION","SATURATION","DE-ESSER","SPACE","OUTPUT" };
+    juce::Slider* ss[] = { &retune,&speed,&body,&presence,&air,&comp,&sat,&deess,&space,&output };
+    for (int i = 0; i < 10; ++i)
         g.drawFittedText(names[i], ss[i]->getX(), ss[i]->getY()-2, ss[i]->getWidth(), 18, juce::Justification::centred, 1);
 
     g.setColour(juce::Colour(0xff30353e));
     g.fillRoundedRectangle(36, 132, 430, 6, 3.0f);
     g.setColour(juce::Colour(0xff7ee787));
     g.fillRoundedRectangle(36, 132, 430 * processor.getAnalysisProgress(), 6, 3.0f);
+}
+
+void VocalForgeAudioProcessorEditor::resized()
+{
+    auto area = getLocalBounds().reduced(28);
+
+    title.setBounds(area.removeFromTop(38));
+    subtitle.setBounds(area.removeFromTop(24));
+    auto header = area.removeFromTop(52);
+    analyzeButton.setBounds(header.removeFromLeft(210).reduced(4));
+    autoButton.setBounds(header.removeFromLeft(190).reduced(4));
+    pitchLabel.setBounds(header.removeFromLeft(250).reduced(4));
+    status.setBounds(header.reduced(4));
+
+    auto choices = area.removeFromTop(38);
+    key.setBounds(choices.removeFromLeft(150).reduced(4));
+    scale.setBounds(choices.removeFromLeft(150).reduced(4));
+    mode.setBounds(choices.removeFromLeft(150).reduced(4));
+    style.setBounds(choices.removeFromLeft(150).reduced(4));
+
+    auto top = area.removeFromTop(190);
+    auto bottom = area;
+    juce::Slider* topSliders[] = { &retune,&speed,&body,&presence,&air };
+    juce::Slider* bottomSliders[] = { &comp,&sat,&deess,&space,&output };
+
+    const int topWidth = top.getWidth() / 5;
+    const int bottomWidth = bottom.getWidth() / 5;
+    for (int i = 0; i < 5; ++i)
+    {
+        topSliders[i]->setBounds(top.removeFromLeft(topWidth).reduced(8));
+        bottomSliders[i]->setBounds(bottom.removeFromLeft(bottomWidth).reduced(8));
+    }
 }
