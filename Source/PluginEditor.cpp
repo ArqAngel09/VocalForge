@@ -6,11 +6,11 @@ VocalForgeAudioProcessorEditor::VocalForgeAudioProcessorEditor(VocalForgeAudioPr
     setSize(900, 590);
 
     title.setText("VOCALFORGE 2.0", juce::dontSendNotification);
-    title.setFont(juce::Font(28.0f, juce::Font::bold));
+    title.setFont(juce::Font(juce::FontOptions{}.withHeight(28.0f).withStyle(juce::Font::bold)));
     addAndMakeVisible(title);
 
     subtitle.setText("Natural pitch correction • adaptive vocal finishing", juce::dontSendNotification);
-    subtitle.setFont(juce::Font(14.0f));
+    subtitle.setFont(juce::Font(juce::FontOptions{}.withHeight(14.0f)));
     addAndMakeVisible(subtitle);
 
     analyzeButton.onClick = [this] { processor.triggerAnalysis(); };
@@ -42,10 +42,10 @@ VocalForgeAudioProcessorEditor::VocalForgeAudioProcessorEditor(VocalForgeAudioPr
     modeAttach = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(processor.apvts, "mode", mode);
     styleAttach = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(processor.apvts, "style", style);
 
-    pitchLabel.setFont(juce::Font(15.0f, juce::Font::bold));
+    pitchLabel.setFont(juce::Font(juce::FontOptions{}.withHeight(15.0f).withStyle(juce::Font::bold)));
     addAndMakeVisible(pitchLabel);
     keyLabel.setText("KEY / MODE", juce::dontSendNotification);
-    keyLabel.setFont(juce::Font(11.0f));
+    keyLabel.setFont(juce::Font(juce::FontOptions{}.withHeight(11.0f)));
     addAndMakeVisible(keyLabel);
     addAndMakeVisible(status);
 
