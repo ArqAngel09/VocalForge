@@ -15,6 +15,7 @@ public:
 
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
+    juce::AudioProcessorParameter* getBypassParameter() const override { return apvts.getParameter("bypass"); }
 
     const juce::String getName() const override { return "AMR Vocal Mix"; }
     bool acceptsMidi() const override { return false; }
@@ -96,6 +97,7 @@ private:
     std::atomic<bool> analysisReady { false };
     std::atomic<bool> analysisRequested { false };
     std::atomic<bool> analysisRunning { false };
+    int analysisUpdateSamples = 0;
     std::atomic<bool> bypass { false };
     std::atomic<float> inputDb { -100.0f };
     std::atomic<float> outputDb { -100.0f };
