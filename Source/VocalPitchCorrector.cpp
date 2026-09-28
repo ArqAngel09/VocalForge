@@ -2,8 +2,8 @@
 
 namespace
 {
-constexpr float kMinHz = 70.0f;
-constexpr float kMaxHz = 1100.0f;
+constexpr float kMinHz = 30.0f;
+constexpr float kMaxHz = 2200.0f;
 
 static bool isInScale(int pc, int root, int type) noexcept
 {
@@ -28,7 +28,14 @@ void VocalPitchCorrector::prepare(double sr, int maxBlockSize)
     ringMask_ = ringSize_ - 1;
 
     ring_.assign((size_t) ringSize_, 0.0f);
-    analysisBuffer_.assign((size_t) grainSize_, 0.0f);
+
+    // Use a longer analysis window than the pitch-shifting grain. This gives the
+    // detector enough cycles to reliably identify C1 while still allowing the
+    // shifter itself to remain responsive.
+    const int analysisSize = juce::jmax(grainSize_, (int) std::ceil(sampleRate_ / kMinHz * 2.2));
+    analysisBuffer_.assign((size_t) analysisSize, 0.0f);
+    differenceBuffer_.assign((size_t) analysisSize + 1, 0.0f);
+    cmndfBuffer_.assign((size_t) analysisSize + 1, 1.0f);
 
     outBuffer_.setSize(1, juce::jmax(1, maxBlockSize));
     weightBuffer_.setSize(1, juce::jmax(1, maxBlockSize));
@@ -42,6 +49,8 @@ void VocalPitchCorrector::reset()
     writePos_ = 0;
     hopCounter_ = 0;
     currentRatio_ = 1.0f;
+    nextGrainReadPos_ = 0.0;
+    pitchReadInitialised_ = false;
     stableMidi_ = 0.0f;
     stableTarget_ = 0.0f;
     stableFrames_ = 0;
@@ -52,84 +61,101 @@ void VocalPitchCorrector::reset()
     confidence_.store(0.0f, std::memory_order_relaxed);
 }
 
-float VocalPitchCorrector::detectPitch(float* x, int n, float& confidence) const noexcept
+float VocalPitchCorrector::detectPitch(float* x, int n, float& confidence) noexcept
 {
     confidence = 0.0f;
     if (n < 512) return 0.0f;
 
-    // Remove DC and apply a Hann window. This reduces false octave decisions and
-    // makes the detector much more stable on breathy/processed vocals.
+    // YIN-style difference function. Unlike a plain autocorrelation maximum,
+    // this explicitly searches for the first strong periodicity, which greatly
+    // reduces octave-up/octave-down errors on voiced vocals.
     double mean = 0.0;
     for (int i = 0; i < n; ++i) mean += x[i];
-    mean /= (double)n;
+    mean /= (double) n;
 
     double energy = 0.0;
     for (int i = 0; i < n; ++i)
     {
-        const float w = 0.5f - 0.5f * std::cos(2.0f * juce::MathConstants<float>::pi * i / (float)(n - 1));
-        x[i] = (x[i] - (float)mean) * w;
-        energy += (double)x[i] * x[i];
+        x[i] -= (float) mean;
+        energy += (double) x[i] * x[i];
     }
-    if (energy < 1.0e-7) return 0.0f;
+
+    if (energy < 1.0e-7)
+        return 0.0f;
 
     const int minLag = juce::jmax(2, (int) std::floor(sampleRate_ / kMaxHz));
-    const int maxLag = juce::jmin(n - 2, (int) std::ceil(sampleRate_ / kMinHz));
+    const int maxLag = juce::jmin(n / 2, (int) std::ceil(sampleRate_ / kMinHz));
+    if (maxLag <= minLag + 2)
+        return 0.0f;
 
-    int bestLag = minLag;
-    double best = -1.0;
+    auto* difference = differenceBuffer_.data();
+    auto* cmndf = cmndfBuffer_.data();
+    std::fill(difference, difference + maxLag + 1, 0.0f);
+    std::fill(cmndf, cmndf + maxLag + 1, 1.0f);
+
     for (int lag = minLag; lag <= maxLag; ++lag)
     {
-        double sum = 0.0, e1 = 0.0, e2 = 0.0;
+        double d = 0.0;
         for (int i = 0; i < n - lag; i += 2)
         {
-            const double a = x[i], b = x[i + lag];
-            sum += a * b;
-            e1 += a * a;
-            e2 += b * b;
+            const double delta = (double) x[i] - x[i + lag];
+            d += delta * delta;
+        }
+        difference[lag] = (float) d;
+    }
+
+    double running = 0.0;
+    int bestLag = 0;
+    float bestScore = 1.0f;
+    const float yinThreshold = 0.14f;
+
+    for (int lag = 1; lag <= maxLag; ++lag)
+    {
+        running += difference[(size_t) lag];
+        if (lag < minLag || running <= 1.0e-12)
+            continue;
+
+        const float score = difference[(size_t) lag] * (float) lag / (float) running;
+        cmndf[lag] = score;
+
+        // Select the first sufficiently deep valley. This is the key octave
+        // protection: the fundamental is preferred over its 2nd harmonic.
+        if (score < yinThreshold)
+        {
+            int refined = lag;
+            while (refined + 1 <= maxLag && cmndf[refined + 1] < cmndf[refined])
+                ++refined;
+            bestLag = refined;
+            bestScore = cmndf[(size_t) refined];
+            break;
         }
 
-        const double corr = sum / std::sqrt(e1 * e2 + 1.0e-12);
-        if (corr > best)
+        if (score < bestScore)
         {
-            best = corr;
+            bestScore = score;
             bestLag = lag;
         }
     }
 
-    // Parabolic interpolation around the autocorrelation peak.
-    double refinedLag = (double)bestLag;
+    if (bestLag <= 0)
+        return 0.0f;
+
+    double refinedLag = (double) bestLag;
     if (bestLag > minLag && bestLag < maxLag)
     {
-        auto corrAt = [x, n](int lag)
-        {
-            double sum = 0.0, e1 = 0.0, e2 = 0.0;
-            for (int i = 0; i < n - lag; i += 2)
-            {
-                const double a = x[i], b = x[i + lag];
-                sum += a * b; e1 += a * a; e2 += b * b;
-            }
-            return sum / std::sqrt(e1 * e2 + 1.0e-12);
-        };
-        const double ym = corrAt(bestLag - 1);
-        const double y0 = best;
-        const double yp = corrAt(bestLag + 1);
+        const double ym = cmndf[bestLag - 1];
+        const double y0 = cmndf[bestLag];
+        const double yp = cmndf[bestLag + 1];
         const double denom = ym - 2.0 * y0 + yp;
         if (std::abs(denom) > 1.0e-9)
             refinedLag += 0.5 * (ym - yp) / denom;
     }
 
-    confidence = (float)juce::jlimit(0.0, 1.0, (best - 0.30) / 0.58);
-    if (confidence < 0.20f) return 0.0f;
+    confidence = juce::jlimit(0.0f, 1.0f, 1.0f - bestScore / 0.45f);
+    if (confidence < 0.18f)
+        return 0.0f;
 
-    return (float)(sampleRate_ / juce::jmax(1.0, refinedLag));
-}
-
-float VocalPitchCorrector::wrapMidiDistance(float a, float b) noexcept
-{
-    float d = a - b;
-    while (d > 6.0f) d -= 12.0f;
-    while (d < -6.0f) d += 12.0f;
-    return d;
+    return (float) (sampleRate_ / juce::jmax(1.0, refinedLag));
 }
 
 float VocalPitchCorrector::quantizeMidi(float midi) const noexcept
@@ -167,7 +193,9 @@ float VocalPitchCorrector::smoothTarget(float target, float detected, float conf
     }
     else
     {
-        const float distance = std::abs(wrapMidiDistance(detected, stableMidi_));
+        // Do not wrap this comparison at the octave. C4 -> C5 is a real octave
+        // change and must never be treated as a zero-distance pitch movement.
+        const float distance = std::abs(detected - stableMidi_);
         if (distance > 0.65f)
         {
             stableMidi_ = detected;
@@ -178,7 +206,7 @@ float VocalPitchCorrector::smoothTarget(float target, float detected, float conf
             stableMidi_ = 0.88f * stableMidi_ + 0.12f * detected;
         }
 
-        const float targetDistance = std::abs(wrapMidiDistance(target, stableTarget_));
+        const float targetDistance = std::abs(target - stableTarget_);
         if (targetDistance > 1.0f)
             stableTarget_ = target;
         else
@@ -215,7 +243,7 @@ void VocalPitchCorrector::process(juce::AudioBuffer<float>& buffer, int numSampl
         writePos_ = (writePos_ + 1) & ringMask_;
     }
 
-    const int analysisN = juce::jmin(grainSize_, ringSize_ - 1);
+    const int analysisN = juce::jmin((int) analysisBuffer_.size(), ringSize_ - 1);
     int p = (writePos_ - analysisN + ringSize_) & ringMask_;
     for (int i = 0; i < analysisN; ++i)
         analysisBuffer_[(size_t)i] = ring_[(size_t)((p + i) & ringMask_)];
@@ -236,7 +264,9 @@ void VocalPitchCorrector::process(juce::AudioBuffer<float>& buffer, int numSampl
     else
     {
         confidence_.store(0.0f, std::memory_order_relaxed);
-        currentRatio_ = 1.0f + (currentRatio_ - 1.0f) * 0.992f;
+        // Stop pitch shifting quickly when the detector loses a reliable voiced
+        // fundamental. This keeps breaths/consonants from being dragged by the
+        // previous note and removes a common source of robotic doubling.        currentRatio_ = 1.0f + (currentRatio_ - 1.0f) * 0.70f;
     }
 
     if (numSamples > outBuffer_.getNumSamples())
@@ -258,10 +288,31 @@ void VocalPitchCorrector::process(juce::AudioBuffer<float>& buffer, int numSampl
         if (global % hopSize_ == 0)
         {
             Grain& g = grains_[(global / hopSize_) & 1];
-            g.readPos = (double)((writePos_ - grainSize_ + ringSize_) & ringMask_);
-            g.increment = juce::jlimit(0.50, 2.00, (double)currentRatio_);
+
+            if (!pitchReadInitialised_)
+            {
+                nextGrainReadPos_ = (double) ((writePos_ - grainSize_ + ringSize_) & ringMask_);
+                pitchReadInitialised_ = true;
+            }
+
+            // Consecutive grains must read consecutive sections of the source.
+            // The previous implementation started both overlapping grains at the
+            // same sample, which is a direct cause of comb-filtering/doubling.
+            g.readPos = nextGrainReadPos_;
+            g.increment = juce::jlimit(0.50, 2.00, (double) currentRatio_);
             g.age = 0;
             g.active = true;
+
+            nextGrainReadPos_ += (double) hopSize_ * g.increment;
+
+            // Keep the read head safely inside the rolling history. Re-anchoring
+            // only when it approaches the write head prevents runaway drift.
+            const double wrappedNext = std::fmod(nextGrainReadPos_, (double) ringSize_);
+            nextGrainReadPos_ = wrappedNext < 0.0 ? wrappedNext + ringSize_ : wrappedNext;
+            const int readIndex = (int) std::floor(nextGrainReadPos_) & ringMask_;
+            const int delay = (writePos_ - readIndex + ringSize_) & ringMask_;
+            if (delay < hopSize_ || delay > ringSize_ - grainSize_ - hopSize_)
+                nextGrainReadPos_ = (double) ((writePos_ - grainSize_ + ringSize_) & ringMask_);
         }
 
         for (auto& g : grains_)

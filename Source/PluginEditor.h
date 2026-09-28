@@ -34,11 +34,13 @@ private:
     void drawMeters(juce::Graphics&, juce::Rectangle<float>);
     void drawLogo(juce::Graphics&, juce::Rectangle<float>);
     juce::String valueText(const juce::Slider&) const;
+    void setPage(int page);
 
     VocalForgeAudioProcessor& processor;
     AMRVocalLookAndFeel lookAndFeel;
 
-    juce::TextButton analyzeButton { "Analizar" }, autoButton { "Auto" };
+    juce::TextButton analyzeButton { "ESCUCHAR Y ANALIZAR" }, autoButton { "AUTO" };
+    juce::TextButton vocalAssistTab { "VOCAL ENGINE" }, simpleTab { "QUICK" }, advancedTab { "PRO" };
     juce::TextButton bypassButton { "Bypass" }, saveButton { "▣" }, abButton { "A | B" }, settingsButton { "⚙" };
     juce::Label title, subtitle, status;
     juce::Label presetLabel;
@@ -49,6 +51,7 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> retuneAttach, speedAttach, bodyAttach, presenceAttach, airAttach, compAttach, satAttach, deessAttach, spaceAttach, outputAttach;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> keyAttach, scaleAttach, modeAttach, styleAttach;
 
+    int activePage = 0;
     float phase = 0.0f;
     float inMeter = 0.2f, outMeter = 0.35f;
 
