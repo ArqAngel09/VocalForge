@@ -4,6 +4,8 @@
 class VocalPitchCorrector
 {
 public:
+    VocalPitchCorrector() = default;
+
     void prepare(double sampleRate, int maxBlockSize);
     void reset();
 
