@@ -85,7 +85,15 @@ private:
     std::atomic<float> progress { 0.0f };
     std::atomic<bool> analysisReady { false };
     std::atomic<bool> analysisRequested { false };
+    std::atomic<bool> analysisRunning { false };
     Analysis analysis;
+
+    float lastBodyDb = 999.0f, lastPresDb = 999.0f, lastAirDb = 999.0f;
+    float lastComp = 999.0f, lastDeess = 999.0f, lastSpace = 999.0f;
+    float lastOutputDb = 999.0f;
+    int lastStyle = -1;
+    bool filtersInitialised = false;
+    bool reverbInitialised = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(VocalForgeAudioProcessor)
 };
