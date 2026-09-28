@@ -59,6 +59,7 @@ private:
     juce::dsp::IIR::Filter<float> bodyFilterL, bodyFilterR;
     juce::dsp::IIR::Filter<float> presenceFilterL, presenceFilterR;
     juce::dsp::IIR::Filter<float> airFilterL, airFilterR;
+    juce::dsp::IIR::Filter<float> eqLowL, eqLowR, eqLowMidL, eqLowMidR, eqHighMidL, eqHighMidR, eqHighL, eqHighR;
     juce::dsp::IIR::Filter<float> deEssFilterL, deEssFilterR;
     juce::dsp::Compressor<float> compressorL, compressorR;
     juce::dsp::Limiter<float> limiterL, limiterR;
@@ -67,11 +68,11 @@ private:
     juce::AudioBuffer<float> wetBuffer;
     juce::AudioBuffer<float> delayBuffer;
     int delayWritePos = 0;
-    juce::SmoothedValue<float> delayMix;
+    int doublerWritePos = 0;
 
     VocalPitchCorrector pitchCorrector;
 
-    juce::SmoothedValue<float> inputGain, outputGain, drive, reverbMix, deEssGain, vocalMakeupGain;
+    juce::SmoothedValue<float> inputGain, outputGain, drive, reverbMix, delayMix, deEssGain, vocalMakeupGain, exciterMix, doublerMix;
     float deEssEnvelopeL = 0.0f;
     float deEssEnvelopeR = 0.0f;
 
@@ -84,6 +85,10 @@ private:
     std::atomic<float> smartDrive { 10.0f };
     std::atomic<float> smartDeess { 32.0f };
     std::atomic<float> smartSpace { 14.0f };
+
+    float lastEqLow = 999.0f, lastEqLowMid = 999.0f, lastEqHighMid = 999.0f, lastEqHigh = 999.0f;
+    float lastColor = 999.0f, lastDeessFocus = 999.0f, lastReverbDecay = 999.0f;
+    bool advancedFiltersInitialised = false;
 
     std::atomic<float> progress { 0.0f };
     std::atomic<bool> analysisReady { false };
@@ -98,6 +103,7 @@ private:
     int lastStyle = -1;
     bool filtersInitialised = false;
     bool reverbInitialised = false;
+    juce::AudioBuffer<float> doublerBuffer;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(VocalForgeAudioProcessor)
 };
