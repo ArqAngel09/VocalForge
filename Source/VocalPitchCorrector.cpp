@@ -2,8 +2,8 @@
 
 namespace
 {
-constexpr float kMinHz = 70.0f;
-constexpr float kMaxHz = 1100.0f;
+constexpr float kMinHz = 30.0f;
+constexpr float kMaxHz = 2200.0f;
 
 static bool isInScale(int pc, int root, int type) noexcept
 {
@@ -28,9 +28,14 @@ void VocalPitchCorrector::prepare(double sr, int maxBlockSize)
     ringMask_ = ringSize_ - 1;
 
     ring_.assign((size_t) ringSize_, 0.0f);
-    analysisBuffer_.assign((size_t) grainSize_, 0.0f);
-    differenceBuffer_.assign((size_t) grainSize_ + 1, 0.0f);
-    cmndfBuffer_.assign((size_t) grainSize_ + 1, 1.0f);
+
+    // Use a longer analysis window than the pitch-shifting grain. This gives the
+    // detector enough cycles to reliably identify C1 while still allowing the
+    // shifter itself to remain responsive.
+    const int analysisSize = juce::jmax(grainSize_, (int) std::ceil(sampleRate_ / kMinHz * 2.2));
+    analysisBuffer_.assign((size_t) analysisSize, 0.0f);
+    differenceBuffer_.assign((size_t) analysisSize + 1, 0.0f);
+    cmndfBuffer_.assign((size_t) analysisSize + 1, 1.0f);
 
     outBuffer_.setSize(1, juce::jmax(1, maxBlockSize));
     weightBuffer_.setSize(1, juce::jmax(1, maxBlockSize));
@@ -238,7 +243,7 @@ void VocalPitchCorrector::process(juce::AudioBuffer<float>& buffer, int numSampl
         writePos_ = (writePos_ + 1) & ringMask_;
     }
 
-    const int analysisN = juce::jmin(grainSize_, ringSize_ - 1);
+    const int analysisN = juce::jmin((int) analysisBuffer_.size(), ringSize_ - 1);
     int p = (writePos_ - analysisN + ringSize_) & ringMask_;
     for (int i = 0; i < analysisN; ++i)
         analysisBuffer_[(size_t)i] = ring_[(size_t)((p + i) & ringMask_)];
