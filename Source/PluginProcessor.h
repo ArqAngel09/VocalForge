@@ -83,6 +83,8 @@ private:
 
     std::atomic<bool> smartMixActive { false };
     std::atomic<float> smartInputTrim { 0.0f };
+    std::atomic<float> smartRetune { 55.0f };
+    std::atomic<float> smartSpeed { 55.0f };
     std::atomic<float> smartBody { 0.0f };
     std::atomic<float> smartPresence { 2.0f };
     std::atomic<float> smartAir { 2.0f };
