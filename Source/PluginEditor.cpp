@@ -501,6 +501,8 @@ void VocalForgeAudioProcessorEditor::paintOverChildren(juce::Graphics& g)
 {
     if(activePage==1)
     {
+        drawKnobInfo(g,retune,"Pitch Amount");
+        drawKnobInfo(g,speed,"Retune Speed");
         drawKnobInfo(g,comp,"Dynamics");
         drawKnobInfo(g,magic,"Character");
         drawKnobInfo(g,space,"Space");
@@ -605,7 +607,7 @@ void VocalForgeAudioProcessorEditor::resized()
             layoutKnobGrid({&magic,&sat,&exciter,&doubler,&denoise,&resonance});
     }
 
-    if(adv)
+    if(adv || activePage == 1)
     {
         key.setVisible(true); scale.setVisible(true); mode.setVisible(true); style.setVisible(true);
         key.setBounds(a.getX()+28,y+205,95,30); scale.setBounds(a.getX()+128,y+205,105,30);
