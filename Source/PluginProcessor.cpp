@@ -58,6 +58,7 @@ void VocalForgeAudioProcessor::prepareToPlay(double sr, int samplesPerBlock)
 
     inputGain.reset(sr, 0.03);
     outputGain.reset(sr, 0.03);
+    vocalMakeupGain.reset(sr, 0.05);
     drive.reset(sr, 0.03);
     reverbMix.reset(sr, 0.05);
     deEssGain.reset(sr, 0.02);
@@ -140,14 +141,16 @@ void VocalForgeAudioProcessor::applySmartMix()
     const double crest = analysis.peak / std::max(0.0001, rms);
     const double bright = analysis.high / std::max(1.0, analysis.mid);
 
+    const float inputTrim = (float) juce::jlimit(-3.0, 6.0, 20.0 * std::log10(0.18 / std::max(0.025, rms)));
     const float body = (float) juce::jmap((float) juce::jlimit(0.05, 0.8, rms), 0.05f, 0.8f, 3.0f, -1.5f);
     const float comp = (float) juce::jlimit(20.0, 82.0, 68.0 - crest * 7.0);
     const float air = (float) juce::jlimit(-1.0, 7.0, 1.8 + (bright - 0.35) * 2.4);
     const float deess = (float) juce::jlimit(15.0, 72.0, 28.0 + bright * 23.0);
-    const float presence = (float) juce::jlimit(0.0, 5.5, 2.6 + (0.25 - bright) * 4.5);
+    const float presence = (float) juce::jlimit(1.0, 5.5, 3.0 + (0.25 - bright) * 4.5);
     const float driveValue = (float) (8.0 + juce::jlimit(0.0, 18.0, (crest - 3.0) * 2.2));
     const float spaceValue = 12.0f + (float) juce::jlimit(0.0, 12.0, bright * 6.0);
 
+    smartInputTrim.store(inputTrim, std::memory_order_relaxed);
     smartBody.store(body, std::memory_order_relaxed);
     smartPresence.store(presence, std::memory_order_relaxed);
     smartAir.store(air, std::memory_order_relaxed);
@@ -190,6 +193,7 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
 
     const bool useSmart = smartMixActive.load(std::memory_order_acquire);
 
+    const float smartTrimDb = useSmart ? smartInputTrim.load(std::memory_order_relaxed) : 0.0f;
     float bodyDb = useSmart ? smartBody.load(std::memory_order_relaxed) : value("body");
     float presDb = useSmart ? smartPresence.load(std::memory_order_relaxed) : value("presence");
     float airDb = useSmart ? smartAir.load(std::memory_order_relaxed) : value("air");
@@ -215,7 +219,7 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     deess = juce::jlimit(0.0f, 100.0f, deess);
     space = juce::jlimit(0.0f, 100.0f, space);
 
-    inputGain.setTargetValue(juce::Decibels::decibelsToGain(inDb));
+    inputGain.setTargetValue(juce::Decibels::decibelsToGain(inDb + smartTrimDb));
     outputGain.setTargetValue(juce::Decibels::decibelsToGain(value("output")));
 
     for (int i = 0; i < n; ++i)
@@ -244,6 +248,11 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
 
     const float threshold = -19.0f - comp * 0.09f;
     const float ratio = 1.25f + comp * 0.032f;
+    const float makeupDb = useSmart
+        ? juce::jmap(comp, 20.0f, 82.0f, 1.5f, 5.5f)
+        : juce::jmap(comp, 0.0f, 100.0f, 0.0f, 4.0f);
+    vocalMakeupGain.setTargetValue(juce::Decibels::decibelsToGain(makeupDb));
+    const float makeupGain = vocalMakeupGain.getNextValue();
     compressorL.setThreshold(threshold); compressorR.setThreshold(threshold);
     compressorL.setRatio(ratio); compressorR.setRatio(ratio);
     compressorL.setAttack(5.0f); compressorR.setAttack(5.0f);
@@ -276,7 +285,7 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
 
         for (int i = 0; i < n; ++i)
         {
-            const float x = data[i];
+            const float x = data[i] * makeupGain;
             const float shaped = std::tanh(x * (1.0f + driveAmount * 2.2f));
             data[i] = shaped / driveNorm;
         }
