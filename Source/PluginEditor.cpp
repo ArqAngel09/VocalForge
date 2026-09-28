@@ -32,7 +32,7 @@ void AMRVocalLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int 
                                             float pos, float start, float end, juce::Slider& s)
 {
     const float cx = x + w * .5f, cy = y + h * .45f;
-    const float r = juce::jmin(w, h) * .30f;
+    const float r = juce::jmin(w, h) * .27f;
     const float a = start + pos * (end - start);
     const auto accent = s.getName() == "Saturation" ? PURPLE : CYAN;
 
@@ -418,19 +418,22 @@ void VocalForgeAudioProcessorEditor::resized()
     mode.setBounds((int)a.getX()+194,(int)y+168,82,32);
     style.setBounds((int)a.getX()+282,(int)y+168,100,32);
 
-    // PRO: spacious 4x2 control surface.
-    const float proX=a.getX()+28.0f, proY=y+222.0f;
-    const float proGap=14.0f;
-    const float proW=(a.getWidth()-56.0f-proGap*3.0f)/4.0f;
-    const float proH=100.0f;
+    // PRO: each control gets a dedicated cell. The generous gutters prevent
+    // rotary caps, labels and value readouts from ever colliding.
+    const float proX=a.getX()+34.0f, proY=y+222.0f;
+    const float proGapX=28.0f, proGapY=24.0f;
+    const float proW=(a.getWidth()-68.0f-proGapX*3.0f)/4.0f;
+    const float proH=92.0f;
     juce::Slider* ss[]={&body,&presence,&air,&comp,&sat,&deess,&space,&output};
     for(int i=0;i<8;++i)
     {
         const int row=i/4, col=i%4;
-        ss[i]->setBounds((int)(proX+col*(proW+proGap)),(int)(proY+row*112), (int)proW,(int)proH);
+        ss[i]->setBounds((int)(proX+col*(proW+proGapX)),
+                         (int)(proY+row*(proH+proGapY)),
+                         (int)proW,(int)proH);
     }
 
-    // Meters occupy a dedicated right-side strip in PRO.
+    // Meters occupy a dedicated strip below the control grid.
     status.setBounds((int)a.getX()+20,(int)a.getBottom()-25,(int)a.getWidth()-40,18);
 }
 
