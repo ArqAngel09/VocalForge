@@ -46,7 +46,7 @@ private:
 
     juce::TextButton analyzeButton { "ESCUCHAR" }, autoButton { "AUTO" };
     juce::TextButton vocalAssistTab { "VOCAL ASSIST" }, simpleTab { "SIMPLE" }, advancedTab { "ADVANCED" };
-    juce::TextButton bypassButton { "BYPASS" }, compareButton { "A/B" }, retryButton { "REINICIAR" };
+    juce::TextButton bypassButton { "BYPASS" }, compareButton { "A/B" }, retryButton { "REINICIAR" }, autoGainButton { "AUTO GAIN" };
     juce::TextButton dynamicsTab { "DYNAMICS" }, eqTab { "EQ" }, spaceTab { "SPACE" }, characterTab { "CHARACTER" }, graphTab { "EQ GRAPH" };
     juce::Label title, subtitle, status, presetLabel;
     juce::ComboBox preset, key, scale, mode, style, reverbType, delaySubdivision;
@@ -55,7 +55,7 @@ private:
     juce::Slider magic, color, eqLow, eqLowMid, eqHighMid, eqHigh, spaceTime, exciter, doubler, denoise, resonance, multiband;
     juce::Slider delayFeedback, delayTone, deessFocus, compAttack, compRelease;
 
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> autoAttach, bypassAttach;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> autoAttach, bypassAttach, autoGainAttach;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>
         retuneAttach, speedAttach, bodyAttach, presenceAttach, airAttach, compAttach, satAttach, deessAttach,
         spaceAttach, delayAttach, outputAttach, magicAttach, colorAttach, eqLowAttach, eqLowMidAttach,
