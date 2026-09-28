@@ -32,7 +32,8 @@ public:
     juce::AudioProcessorValueTreeState apvts;
 
     void triggerAnalysis();
-    bool isAnalysisReady() const { return analysisReady.exchange(false); }
+    bool isAnalysisReady() const { return analysisReady.load(); }
+    void acknowledgeAnalysisReady() { analysisReady.store(false); }
     float getAnalysisProgress() const;
     juce::String getAnalysisSummary() const;
 
