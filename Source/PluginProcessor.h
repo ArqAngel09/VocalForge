@@ -65,6 +65,9 @@ private:
     juce::Reverb reverb;
     juce::Reverb::Parameters reverbParams;
     juce::AudioBuffer<float> wetBuffer;
+    juce::AudioBuffer<float> delayBuffer;
+    int delayWritePos = 0;
+    juce::SmoothedValue<float> delayMix;
 
     VocalPitchCorrector pitchCorrector;
 
@@ -86,6 +89,7 @@ private:
     std::atomic<bool> analysisReady { false };
     std::atomic<bool> analysisRequested { false };
     std::atomic<bool> analysisRunning { false };
+    std::atomic<bool> bypass { false };
     Analysis analysis;
 
     float lastBodyDb = 999.0f, lastPresDb = 999.0f, lastAirDb = 999.0f;
