@@ -240,7 +240,7 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     double inSq = 0.0;
     for (int c = 0; c < ch; ++c)
         for (int i = 0; i < n; ++i) { const float x = buffer.getSample(c, i); inSq += (double)x * x; }
-    inputDb.store((float) juce::Decibels::gainToDecibels(std::sqrt(inSq / std::max(1, n * ch)), -100.0f), std::memory_order_relaxed);
+    inputDb.store((float) juce::Decibels::gainToDecibels((float) std::sqrt(inSq / (double) std::max(1, n * ch)), -100.0f), std::memory_order_relaxed);
 
     auto value = [this](const char* id) { return apvts.getRawParameterValue(id)->load(std::memory_order_relaxed); };
 
@@ -534,7 +534,7 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     double outSq = 0.0;
     for (int c = 0; c < ch; ++c)
         for (int i = 0; i < n; ++i) { const float x = buffer.getSample(c, i); outSq += (double)x * x; }
-    outputDb.store((float) juce::Decibels::gainToDecibels(std::sqrt(outSq / std::max(1, n * ch)), -100.0f), std::memory_order_relaxed);
+    outputDb.store((float) juce::Decibels::gainToDecibels((float) std::sqrt(outSq / (double) std::max(1, n * ch)), -100.0f), std::memory_order_relaxed);
 }
 
 void VocalForgeAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
