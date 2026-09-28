@@ -242,3 +242,8 @@ juce::AudioProcessorEditor* VocalForgeAudioProcessor::createEditor()
 {
     return new VocalForgeAudioProcessorEditor(*this);
 }
+
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new VocalForgeAudioProcessor();
+}
