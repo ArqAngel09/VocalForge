@@ -188,8 +188,8 @@ void VocalForgeAudioProcessorEditor::setPage(int page)
     const bool advanced = activePage == 2;
     const bool controls = simple || advanced;
 
-    analyzeButton.setVisible(true);
-    autoButton.setVisible(activePage == 0 || simple);
+    analyzeButton.setVisible(activePage == 0);
+    autoButton.setVisible(false);
     retune.setVisible(controls); speed.setVisible(controls);
     body.setVisible(advanced); presence.setVisible(advanced); air.setVisible(advanced);
     comp.setVisible(advanced); sat.setVisible(advanced); deess.setVisible(advanced);
@@ -360,18 +360,10 @@ void VocalForgeAudioProcessorEditor::paint(juce::Graphics& g)
         text(g,"SCALE",{a.getX()+90,y+160,55,16},9,MUTED);
         text(g,"MODE",{a.getX()+175,y+160,55,16},9,MUTED);
         text(g,"STYLE",{a.getX()+260,y+160,55,16},9,MUTED);
-        text(g,"CADENA VOCAL",{a.getX()+22,y+214,150,20},12,CYAN2);
-        const float base=a.getX()+18, gap=14, w=(a.getWidth()-36-gap*3)/4.0f;
-        juce::Slider* ss[]={&body,&presence,&air,&comp,&sat,&deess,&space,&output};
-        const char* cap[]={"Cuerpo","Presencia","Aire","Comp.","Satur.","De-Esser","Espacio","Salida"};
-        // Labels and values are drawn in paintOverChildren so they stay aligned
-        // with the actual knob bounds at every window size.
-        drawMeters(g,{a.getRight()-112,y+205,92,a.getHeight()-235});
+        text(g,"CADENA VOCAL",{a.getX()+22,y+204,150,20},12,CYAN2);
+        drawMeters(g,{a.getRight()-112,y+300,92,170});
     }
 
-    const float headerRight=a.getRight()-tabsW;
-    presetLabel.setBounds((int)(headerRight-170),(int)a.getY()+5,55,16);
-    preset.setBounds((int)(headerRight-112),(int)a.getY()+10,112,40);
 }
 
 void VocalForgeAudioProcessorEditor::paintOverChildren(juce::Graphics& g)
@@ -413,7 +405,7 @@ void VocalForgeAudioProcessorEditor::resized()
     const float quickW=(contentW-quickGap*4.0f)/5.0f;
 
     analyzeButton.setBounds((int)a.getCentreX()-92,(int)(y+188),184,46);
-    autoButton.setBounds((int)a.getRight()-112,(int)y+190,82,44);
+    autoButton.setBounds(0,0,1,1);
 
     retune.setBounds((int)(quickLeft+0*(quickW+quickGap)),(int)y+205,(int)quickW,105);
     speed.setBounds((int)(quickLeft+1*(quickW+quickGap)),(int)y+205,(int)quickW,105);
@@ -427,15 +419,15 @@ void VocalForgeAudioProcessorEditor::resized()
     style.setBounds((int)a.getX()+282,(int)y+168,100,32);
 
     // PRO: spacious 4x2 control surface.
-    const float proX=a.getX()+28.0f, proY=y+198.0f;
+    const float proX=a.getX()+28.0f, proY=y+222.0f;
     const float proGap=14.0f;
     const float proW=(a.getWidth()-56.0f-proGap*3.0f)/4.0f;
-    const float proH=126.0f;
+    const float proH=100.0f;
     juce::Slider* ss[]={&body,&presence,&air,&comp,&sat,&deess,&space,&output};
     for(int i=0;i<8;++i)
     {
         const int row=i/4, col=i%4;
-        ss[i]->setBounds((int)(proX+col*(proW+proGap)),(int)(proY+row*145), (int)proW,(int)proH);
+        ss[i]->setBounds((int)(proX+col*(proW+proGap)),(int)(proY+row*112), (int)proW,(int)proH);
     }
 
     // Meters occupy a dedicated right-side strip in PRO.
