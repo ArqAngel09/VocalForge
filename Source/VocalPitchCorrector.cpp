@@ -61,7 +61,7 @@ void VocalPitchCorrector::reset()
     confidence_.store(0.0f, std::memory_order_relaxed);
 }
 
-float VocalPitchCorrector::detectPitch(float* x, int n, float& confidence) const noexcept
+float VocalPitchCorrector::detectPitch(float* x, int n, float& confidence) noexcept
 {
     confidence = 0.0f;
     if (n < 512) return 0.0f;
