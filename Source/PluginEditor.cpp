@@ -106,9 +106,9 @@ VocalForgeAudioProcessorEditor::VocalForgeAudioProcessorEditor(VocalForgeAudioPr
     : AudioProcessorEditor(&p), processor(p)
 {
     setLookAndFeel(&lookAndFeel);
-    setSize(900, 560);
+    setSize(900, 650);
     setResizable(true, true);
-    setResizeLimits(760, 480, 1500, 900);
+    setResizeLimits(820, 620, 1500, 950);
 
     title.setText("AMR Vocal Mix", juce::dontSendNotification);
     title.setColour(juce::Label::textColourId, WHITE); addAndMakeVisible(title);
@@ -126,6 +126,9 @@ VocalForgeAudioProcessorEditor::VocalForgeAudioProcessorEditor(VocalForgeAudioPr
     advancedTab.onClick = [this]{ setPage(2); };
 
     analyzeButton.onClick = [this]{ processor.triggerAnalysis(); };
+    bypassButton.setClickingTogglesState(true);
+    bypassButton.setButtonText("BYPASS");
+    bypassAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.apvts, "bypass", bypassButton);
     autoButton.setClickingTogglesState(false);
     autoButton.setButtonText("AUTO");
     autoAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.apvts, "auto", autoButton);
@@ -139,7 +142,7 @@ VocalForgeAudioProcessorEditor::VocalForgeAudioProcessorEditor(VocalForgeAudioPr
     setupSlider(retune,"Retune"); setupSlider(speed,"Speed");
     setupSlider(body,"Body"); setupSlider(presence,"Presence"); setupSlider(air,"Air");
     setupSlider(comp,"Compression"); setupSlider(sat,"Saturation"); setupSlider(deess,"De-Esser");
-    setupSlider(space,"Space"); setupSlider(output,"Output");
+    setupSlider(space,"Space"); setupSlider(delay,"Delay"); setupSlider(output,"Output");
 
     retuneAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processor.apvts,"retune",retune);
     speedAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processor.apvts,"speed",speed);
@@ -150,6 +153,7 @@ VocalForgeAudioProcessorEditor::VocalForgeAudioProcessorEditor(VocalForgeAudioPr
     satAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processor.apvts,"drive",sat);
     deessAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processor.apvts,"deess",deess);
     spaceAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processor.apvts,"space",space);
+    delayAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processor.apvts,"delay",delay);
     outputAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processor.apvts,"output",output);
 
     key.addItemList({"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"},1);
@@ -219,6 +223,7 @@ juce::String VocalForgeAudioProcessorEditor::valueText(const juce::Slider& s) co
 {
     if (s.getName()=="Output") return juce::String(s.getValue(),1)+" dB";
     if (s.getName()=="Speed") return juce::String((int)std::round(s.getValue()))+"%";
+    if (s.getName()=="Delay") return juce::String((int)std::round(s.getValue()))+"%";
     if (s.getName()=="Body" || s.getName()=="Presence" || s.getName()=="Air")
         return juce::String((int)std::round(juce::jmap(s.getValue(),-6.0,10.0,0.0,100.0)))+"%";
     return juce::String((int)std::round(s.getValue()))+"%";
@@ -331,11 +336,12 @@ void VocalForgeAudioProcessorEditor::paint(juce::Graphics& g)
         text(g,juce::String((int)std::round(progress*100.0f))+"%",{cx-40,cy+130,80,24},18,WHITE,juce::Justification::centred);
         text(g,"Escuchar       Analizar       Listo",{cx-155,cy+158,310,18},10,MUTED,juce::Justification::centred);
         g.setColour(juce::Colour(0xff1d2b34)); g.fillRoundedRectangle(cx-175,cy+188,350,46,8);
-        text(g,"Original",{cx-160,cy+201,100,18},11,CYAN2,juce::Justification::centred);
-        text(g,"Asistida",{cx-55,cy+201,100,18},11,MUTED,juce::Justification::centred);
-        text(g,"Relanzar",{cx+55,cy+201,100,18},11,WHITE,juce::Justification::centred);
+        g.setColour(juce::Colour(0xff1d2b34)); g.fillRoundedRectangle(cx-175,cy+166,350,40,8);
+        text(g,"Original",{cx-160,cy+177,100,18},10,CYAN2,juce::Justification::centred);
+        text(g,"Asistida",{cx-55,cy+177,100,18},10,MUTED,juce::Justification::centred);
+        text(g,"Relanzar",{cx+55,cy+177,100,18},10,WHITE,juce::Justification::centred);
 
-        text(g,processor.getAnalysisSummary(),{a.getX()+26,a.getBottom()-38,a.getWidth()-52,20},11,GREEN,juce::Justification::centred);
+        text(g,processor.getAnalysisSummary(),{a.getX()+40,a.getBottom()-30,a.getWidth()-80,18},10,GREEN,juce::Justification::centred);
     }
     else if(activePage==1)
     {
@@ -360,8 +366,8 @@ void VocalForgeAudioProcessorEditor::paint(juce::Graphics& g)
         text(g,"SCALE",{a.getX()+90,y+160,55,16},9,MUTED);
         text(g,"MODE",{a.getX()+175,y+160,55,16},9,MUTED);
         text(g,"STYLE",{a.getX()+260,y+160,55,16},9,MUTED);
-        text(g,"CADENA VOCAL",{a.getX()+22,y+204,150,20},12,CYAN2);
-        drawMeters(g,{a.getRight()-112,y+300,92,170});
+        text(g,"CADENA VOCAL",{a.getX()+30,y+204,180,20},12,CYAN2);
+        text(g,"Controles independientes",{a.getRight()-230,y+204,190,18},9,MUTED,juce::Justification::rightJustified);
     }
 
 }
@@ -378,8 +384,8 @@ void VocalForgeAudioProcessorEditor::paintOverChildren(juce::Graphics& g)
     }
     else if(activePage==2)
     {
-        juce::Slider* ss[]={&body,&presence,&air,&comp,&sat,&deess,&space,&output};
-        const char* cap[]={"Cuerpo","Presencia","Aire","Compresion","Calidez","Sibilancia","Ambiente","Nivel final"};
+        juce::Slider* ss[]={&body,&presence,&air,&comp,&sat,&deess,&space,&delay,&output};
+        const char* cap[]={"Cuerpo","Presencia","Aire","Compresion","Calidez","Sibilancia","Ambiente","Retardo","Nivel final"};
         for(int i=0;i<8;++i) drawKnobInfo(g,*ss[i],cap[i]);
     }
 }
@@ -418,23 +424,22 @@ void VocalForgeAudioProcessorEditor::resized()
     mode.setBounds((int)a.getX()+194,(int)y+168,82,32);
     style.setBounds((int)a.getX()+282,(int)y+168,100,32);
 
-    // PRO: each control gets a dedicated cell. The generous gutters prevent
-    // rotary caps, labels and value readouts from ever colliding.
-    const float proX=a.getX()+34.0f, proY=y+222.0f;
-    const float proGapX=28.0f, proGapY=24.0f;
-    const float proW=(a.getWidth()-68.0f-proGapX*3.0f)/4.0f;
-    const float proH=92.0f;
-    juce::Slider* ss[]={&body,&presence,&air,&comp,&sat,&deess,&space,&output};
-    for(int i=0;i<8;++i)
+    // PRO: 3x3 isolated control grid. Every knob has its own visual cell;
+    // no title, label, meter or neighbouring rotary can overlap it.
+    const float proX=a.getX()+30.0f, proY=y+232.0f;
+    const float proGapX=24.0f, proGapY=18.0f;
+    const float proW=(a.getWidth()-60.0f-proGapX*2.0f)/3.0f;
+    const float proH=82.0f;
+    juce::Slider* ss[]={&body,&presence,&air,&comp,&sat,&deess,&space,&delay,&output};
+    for(int i=0;i<9;++i)
     {
-        const int row=i/4, col=i%4;
+        const int row=i/3, col=i%3;
         ss[i]->setBounds((int)(proX+col*(proW+proGapX)),
                          (int)(proY+row*(proH+proGapY)),
                          (int)proW,(int)proH);
     }
 
-    // Meters occupy a dedicated strip below the control grid.
-    status.setBounds((int)a.getX()+20,(int)a.getBottom()-25,(int)a.getWidth()-40,18);
+    status.setBounds((int)a.getX()+20,(int)a.getBottom()-24,(int)a.getWidth()-40,18);
 }
 
 void VocalForgeAudioProcessorEditor::timerCallback()
