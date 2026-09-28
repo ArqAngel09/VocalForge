@@ -35,6 +35,27 @@ APVTS::ParameterLayout VocalForgeAudioProcessor::createParameterLayout()
     p.push_back(std::make_unique<juce::AudioParameterFloat>("space", "Space", juce::NormalisableRange<float>(0.f, 100.f, 0.01f), 14.f));
     p.push_back(std::make_unique<juce::AudioParameterFloat>("delay", "Delay", juce::NormalisableRange<float>(0.f, 100.f, 0.01f), 0.f));
     p.push_back(std::make_unique<juce::AudioParameterFloat>("output", "Output", juce::NormalisableRange<float>(-12.f, 6.f, 0.01f), -0.8f));
+
+    // Fresh-style functional modules, implemented natively for AMR.
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("magic", "Magic", juce::NormalisableRange<float>(0.f, 100.f, 0.1f), 26.8f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("color", "Color", juce::NormalisableRange<float>(0.f, 100.f, 0.1f), 50.f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("eqLow", "EQ Low", juce::NormalisableRange<float>(-6.f, 6.f, 0.1f), 0.f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("eqLowMid", "EQ Low-Mid", juce::NormalisableRange<float>(-6.f, 6.f, 0.1f), 0.f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("eqHighMid", "EQ High-Mid", juce::NormalisableRange<float>(-6.f, 6.f, 0.1f), 0.f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("eqHigh", "EQ High", juce::NormalisableRange<float>(-6.f, 6.f, 0.1f), 0.f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("spaceTime", "Space Time", juce::NormalisableRange<float>(0.2f, 6.f, 0.01f), 1.8f));
+    p.push_back(std::make_unique<juce::AudioParameterChoice>("reverbType", "Reverb Type", juce::StringArray{"Room","Plate","Large"}, 0));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("exciter", "Exciter", juce::NormalisableRange<float>(0.f, 100.f, 0.1f), 2.8f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("doubler", "Doubler", juce::NormalisableRange<float>(0.f, 100.f, 0.1f), 0.f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("denoise", "Denoise", juce::NormalisableRange<float>(0.f, 100.f, 0.1f), 0.f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("resonance", "Resonance Suppressor", juce::NormalisableRange<float>(0.f, 100.f, 0.1f), 0.f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("multiband", "Multiband", juce::NormalisableRange<float>(0.f, 100.f, 0.1f), 0.f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("delayFeedback", "Delay Feedback", juce::NormalisableRange<float>(0.f, 80.f, 0.1f), 47.5f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("delayTone", "Delay Tone", juce::NormalisableRange<float>(0.f, 100.f, 0.1f), 22.7f));
+    p.push_back(std::make_unique<juce::AudioParameterChoice>("delaySubdivision", "Delay Subdivision", juce::StringArray{"1/16","1/8","1/4"}, 2));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("deessFocus", "De-Esser Focus", juce::NormalisableRange<float>(2000.f, 10000.f, 1.f), 5000.f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("compAttack", "Comp Attack", juce::NormalisableRange<float>(1.f, 50.f, 0.1f), 10.f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("compRelease", "Comp Release", juce::NormalisableRange<float>(50.f, 500.f, 1.f), 180.f));
     p.push_back(std::make_unique<juce::AudioParameterBool>("bypass", "Bypass", false));
     p.push_back(std::make_unique<juce::AudioParameterBool>("auto", "Auto after 15 seconds", true));
     p.push_back(std::make_unique<juce::AudioParameterChoice>("style", "Style", styleChoices(), 1));
@@ -60,6 +81,9 @@ void VocalForgeAudioProcessor::prepareToPlay(double sr, int samplesPerBlock)
     delayBuffer.setSize(2, (int)std::ceil(sr * 2.0));
     delayBuffer.clear();
     delayWritePos = 0;
+    doublerBuffer.setSize(2, (int) std::ceil(sr * 0.08));
+    doublerBuffer.clear();
+    doublerWritePos = 0;
 
     inputGain.reset(sr, 0.03);
     outputGain.reset(sr, 0.03);
@@ -67,6 +91,8 @@ void VocalForgeAudioProcessor::prepareToPlay(double sr, int samplesPerBlock)
     drive.reset(sr, 0.03);
     reverbMix.reset(sr, 0.05);
     delayMix.reset(sr, 0.05);
+    exciterMix.reset(sr, 0.03);
+    doublerMix.reset(sr, 0.03);
     deEssGain.reset(sr, 0.02);
 
     pitchCorrector.prepare(sr, samplesPerBlock);
@@ -75,9 +101,12 @@ void VocalForgeAudioProcessor::prepareToPlay(double sr, int samplesPerBlock)
     analysisReady.store(false);
     analysisRequested.store(false);
     analysisRunning.store(false);
+    analysisUpdateSamples = 0;
     bypass.store(false, std::memory_order_release);
     filtersInitialised = false;
     reverbInitialised = false;
+    advancedFiltersInitialised = false;
+    lastEqLow = lastEqLowMid = lastEqHighMid = lastColor = lastDeessFocus = lastReverbDecay = 999.0f;
     lastBodyDb = lastPresDb = lastAirDb = lastComp = lastSpace = 999.0f;
     deEssEnvelopeL = 0.0f;
     deEssEnvelopeR = 0.0f;
@@ -133,7 +162,17 @@ void VocalForgeAudioProcessor::triggerAnalysis()
     analysis.reset();
     progress.store(0.0f, std::memory_order_release);
     analysisReady.store(false, std::memory_order_release);
-    smartMixActive.store(false, std::memory_order_release);
+    analysisUpdateSamples = 0;
+    // Activate a safe processing profile immediately; the 15-second capture refines it.
+    smartInputTrim.store(0.0f, std::memory_order_relaxed);
+    smartBody.store(0.0f, std::memory_order_relaxed);
+    smartPresence.store(2.0f, std::memory_order_relaxed);
+    smartAir.store(2.0f, std::memory_order_relaxed);
+    smartComp.store(52.0f, std::memory_order_relaxed);
+    smartDrive.store(10.0f, std::memory_order_relaxed);
+    smartDeess.store(32.0f, std::memory_order_relaxed);
+    smartSpace.store(14.0f, std::memory_order_relaxed);
+    smartMixActive.store(true, std::memory_order_release);
     analysisRunning.store(true, std::memory_order_release);
     analysisRequested.store(true, std::memory_order_release);
 }
@@ -201,13 +240,28 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     }
 
     if (analysisRunning.load(std::memory_order_acquire))
+    {
         analyseBlock(buffer);
+        analysisUpdateSamples += buffer.getNumSamples();
+        // Refresh the Smart profile at a low rate while listening so the user hears
+        // the analysis working, without recalculating the profile every audio block.
+        if (analysisUpdateSamples >= (int) std::round(currentSampleRate * 0.25))
+        {
+            analysisUpdateSamples = 0;
+            applySmartMix();
+        }
+    }
     if (isAnalysisReady())
         applySmartMix();
 
     const int n = buffer.getNumSamples();
     const int ch = buffer.getNumChannels();
     if (n <= 0 || ch == 0) return;
+
+    double inSq = 0.0;
+    for (int c = 0; c < ch; ++c)
+        for (int i = 0; i < n; ++i) { const float x = buffer.getSample(c, i); inSq += (double)x * x; }
+    inputDb.store((float) juce::Decibels::gainToDecibels((float) std::sqrt(inSq / (double) std::max(1, n * ch)), -100.0f), std::memory_order_relaxed);
 
     auto value = [this](const char* id) { return apvts.getRawParameterValue(id)->load(std::memory_order_relaxed); };
 
@@ -230,6 +284,24 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     float deess = useSmart ? smartDeess.load(std::memory_order_relaxed) : value("deess");
     float space = useSmart ? smartSpace.load(std::memory_order_relaxed) : value("space");
     const float delay = value("delay");
+    const float magic = value("magic");
+    const float color = value("color");
+    const float eqLow = value("eqLow");
+    const float eqLowMid = value("eqLowMid");
+    const float eqHighMid = value("eqHighMid");
+    const float eqHigh = value("eqHigh");
+    const float spaceTime = value("spaceTime");
+    const int reverbType = (int) value("reverbType");
+    const float exciter = value("exciter");
+    const float doubler = value("doubler");
+    const float denoise = value("denoise");
+    const float resonance = value("resonance");
+    const float multiband = value("multiband");
+    const float delayFeedback = value("delayFeedback");
+    const float delayTone = value("delayTone");
+    const float deessFocus = value("deessFocus");
+    const float compAttack = value("compAttack");
+    const float compRelease = value("compRelease");
 
     switch (style)
     {
@@ -247,6 +319,12 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     sat = juce::jlimit(0.0f, 100.0f, sat);
     deess = juce::jlimit(0.0f, 100.0f, deess);
     space = juce::jlimit(0.0f, 100.0f, space);
+
+    // Character/magic is a controlled harmonic lift, while Color changes the
+    // compressor response rather than simply adding volume.
+    const float magicDrive = juce::jlimit(0.0f, 100.0f, magic);
+    const float colorRatio = juce::jmap(color, 0.0f, 100.0f, 1.2f, 3.8f);
+    const float effectiveComp = juce::jlimit(0.0f, 100.0f, comp + color * 0.10f + multiband * 0.12f);
 
     inputGain.setTargetValue(juce::Decibels::decibelsToGain(inDb + smartTrimDb));
     outputGain.setTargetValue(juce::Decibels::decibelsToGain(value("output")));
@@ -266,7 +344,8 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
 
     // Rebuild IIR coefficients only when a relevant parameter actually changes.
     // Allocating new coefficient objects every audio block is unnecessarily expensive.
-    if (!filtersInitialised || bodyDb != lastBodyDb || presDb != lastPresDb || airDb != lastAirDb)
+    if (!filtersInitialised || bodyDb != lastBodyDb || presDb != lastPresDb || airDb != lastAirDb
+        || eqLow != lastEqLow || eqLowMid != lastEqLowMid || eqHighMid != lastEqHighMid || eqHigh != lastEqHigh)
     {
         hpFilterL.coefficients = juce::dsp::IIR::Coefficients<float>::makeHighPass(currentSampleRate, 70.0);
         hpFilterR.coefficients = hpFilterL.coefficients;
@@ -276,25 +355,35 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         presenceFilterR.coefficients = presenceFilterL.coefficients;
         airFilterL.coefficients = juce::dsp::IIR::Coefficients<float>::makeHighShelf(currentSampleRate, 9000.0, 0.7f, juce::Decibels::decibelsToGain(airDb));
         airFilterR.coefficients = airFilterL.coefficients;
-        deEssFilterL.coefficients = juce::dsp::IIR::Coefficients<float>::makeHighPass(currentSampleRate, 5500.0);
+        eqLowL.coefficients = juce::dsp::IIR::Coefficients<float>::makeLowShelf(currentSampleRate, 110.0, 0.7f, juce::Decibels::decibelsToGain(eqLow));
+        eqLowR.coefficients = eqLowL.coefficients;
+        eqLowMidL.coefficients = juce::dsp::IIR::Coefficients<float>::makePeakFilter(currentSampleRate, 520.0, 1.0f, juce::Decibels::decibelsToGain(eqLowMid));
+        eqLowMidR.coefficients = eqLowMidL.coefficients;
+        eqHighMidL.coefficients = juce::dsp::IIR::Coefficients<float>::makePeakFilter(currentSampleRate, 3200.0, 1.0f, juce::Decibels::decibelsToGain(eqHighMid));
+        eqHighMidR.coefficients = eqHighMidL.coefficients;
+        eqHighL.coefficients = juce::dsp::IIR::Coefficients<float>::makeHighShelf(currentSampleRate, 10500.0, 0.7f, juce::Decibels::decibelsToGain(eqHigh));
+        eqHighR.coefficients = eqHighL.coefficients;
+        deEssFilterL.coefficients = juce::dsp::IIR::Coefficients<float>::makeHighPass(currentSampleRate, deessFocus);
         deEssFilterR.coefficients = deEssFilterL.coefficients;
         lastBodyDb = bodyDb; lastPresDb = presDb; lastAirDb = airDb;
+        lastEqLow = eqLow; lastEqLowMid = eqLowMid; lastEqHighMid = eqHighMid; lastEqHigh = eqHigh; lastDeessFocus = deessFocus;
         filtersInitialised = true;
     }
 
-    const float threshold = -19.0f - comp * 0.09f;
-    const float ratio = 1.25f + comp * 0.032f;
+    const float threshold = -19.0f - effectiveComp * 0.09f;
+    const float ratio = colorRatio + effectiveComp * 0.018f;
     // Never add makeup gain in the normal/default path. Smart Mix can add
     // controlled makeup only after the user explicitly runs the analysis.
-    const float makeupDb = useSmart ? juce::jmap(comp, 20.0f, 82.0f, 1.0f, 3.0f) : 0.0f;
+    const float makeupDb = useSmart ? juce::jmap(effectiveComp, 20.0f, 82.0f, 1.0f, 3.0f) : 0.0f;
     vocalMakeupGain.setTargetValue(juce::Decibels::decibelsToGain(makeupDb));
     const float makeupGain = vocalMakeupGain.getNextValue();
-    if (comp != lastComp || !filtersInitialised)
+    if (effectiveComp != lastComp || !filtersInitialised)
     {
         compressorL.setThreshold(threshold); compressorR.setThreshold(threshold);
         compressorL.setRatio(ratio); compressorR.setRatio(ratio);
-        compressorL.setAttack(5.0f); compressorR.setAttack(5.0f);
-        lastComp = comp;
+        compressorL.setAttack(compAttack); compressorR.setAttack(compAttack);
+        compressorL.setRelease(compRelease); compressorR.setRelease(compRelease);
+        lastComp = effectiveComp;
     }
     if (!filtersInitialised)
     {
@@ -302,12 +391,16 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         limiterL.setRelease(70.0f); limiterR.setRelease(70.0f);
     }
 
-    auto processOne = [this, n, bodyDb, presDb, airDb, comp, sat, deess, makeupGain]
+    auto processOne = [this, n, bodyDb, presDb, airDb, effectiveComp, sat, deess, makeupGain, magicDrive, exciter, denoise, resonance]
         (juce::AudioBuffer<float>& b, int c,
          juce::dsp::IIR::Filter<float>& hp,
          juce::dsp::IIR::Filter<float>& body,
          juce::dsp::IIR::Filter<float>& pres,
          juce::dsp::IIR::Filter<float>& air,
+         juce::dsp::IIR::Filter<float>& eqLowF,
+         juce::dsp::IIR::Filter<float>& eqLowMidF,
+         juce::dsp::IIR::Filter<float>& eqHighMidF,
+         juce::dsp::IIR::Filter<float>& eqHighF,
          juce::dsp::IIR::Filter<float>& ds,
          juce::dsp::Compressor<float>& compProc,
          juce::dsp::Limiter<float>& lim,
@@ -319,23 +412,35 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         body.process(ctx);
         pres.process(ctx);
         air.process(ctx);
+        eqLowF.process(ctx);
+        eqLowMidF.process(ctx);
+        eqHighMidF.process(ctx);
+        eqHighF.process(ctx);
         compProc.process(ctx);
 
         auto* data = b.getWritePointer(c);
         const float driveAmount = sat / 100.0f;
-        const float driveNorm = std::max(1.0f, std::tanh(1.0f + driveAmount * 2.2f));
-
-        for (int i = 0; i < n; ++i)
+                for (int i = 0; i < n; ++i)
         {
             const float x = data[i] * makeupGain;
-            const float shaped = std::tanh(x * (1.0f + driveAmount * 2.2f));
-            data[i] = shaped / driveNorm;
+            const float character = magicDrive / 100.0f;
+            const float driveK = 1.0f + driveAmount * 2.2f + character * 1.1f;
+            // Unity-gain soft clip: the old normalization boosted low-level material.
+            const float shaped = std::tanh(x * driveK) / driveK;
+            const float wet = juce::jlimit(0.0f, 1.0f, 0.55f + character * 0.25f);
+            data[i] = x * (1.0f - wet) + shaped * wet;
+            if (denoise > 0.01f)
+            {
+                const float gate = juce::jmap(denoise, 0.0f, 100.0f, 0.015f, 0.08f);
+                const float env = std::abs(data[i]);
+                if (env < gate) data[i] *= 1.0f - denoise * 0.006f;
+            }
         }
 
         for (int i = 0; i < n; ++i)
         {
             const float high = std::abs(ds.processSample(data[i]));
-            const float target = juce::jlimit(0.0f, 0.62f, high * (deess / 100.0f) * 1.65f);
+            const float target = juce::jlimit(0.0f, 0.62f, high * (deess / 100.0f) * 1.65f + resonance * 0.0015f);
             deEssEnvelope = 0.992f * deEssEnvelope + 0.008f * target;
             data[i] *= (1.0f - deEssEnvelope);
         }
@@ -347,27 +452,29 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
 
     if (ch >= 2)
     {
-        processOne(buffer, 0, hpFilterL, bodyFilterL, presenceFilterL, airFilterL,
+        processOne(buffer, 0, hpFilterL, bodyFilterL, presenceFilterL, airFilterL, eqLowL, eqLowMidL, eqHighMidL, eqHighL,
                    deEssFilterL, compressorL, limiterL, deEssEnvelopeL);
-        processOne(buffer, 1, hpFilterR, bodyFilterR, presenceFilterR, airFilterR,
+        processOne(buffer, 1, hpFilterR, bodyFilterR, presenceFilterR, airFilterR, eqLowR, eqLowMidR, eqHighMidR, eqHighR,
                    deEssFilterR, compressorR, limiterR, deEssEnvelopeR);
     }
     else
     {
-        processOne(buffer, 0, hpFilterL, bodyFilterL, presenceFilterL, airFilterL,
+        processOne(buffer, 0, hpFilterL, bodyFilterL, presenceFilterL, airFilterL, eqLowL, eqLowMidL, eqHighMidL, eqHighL,
                    deEssFilterL, compressorL, limiterL, deEssEnvelopeL);
     }
 
-    if (!reverbInitialised || space != lastSpace)
+    if (!reverbInitialised || space != lastSpace || spaceTime != lastReverbDecay)
     {
         reverbMix.setTargetValue(space / 100.0f * 0.16f);
-        reverbParams.roomSize = 0.28f + space * 0.004f;
-        reverbParams.damping = 0.55f;
+        const float typeSize = reverbType == 0 ? 0.30f : (reverbType == 1 ? 0.52f : 0.78f);
+        reverbParams.roomSize = juce::jlimit(0.12f, 0.92f, typeSize + space * 0.0025f + spaceTime * 0.025f);
+        reverbParams.damping = reverbType == 1 ? 0.35f : 0.55f;
         reverbParams.wetLevel = 0.62f;
         reverbParams.dryLevel = 0.0f;
         reverbParams.width = 0.9f;
         reverb.setParameters(reverbParams);
         lastSpace = space;
+        lastReverbDecay = spaceTime;
         reverbInitialised = true;
     }
 
@@ -390,9 +497,14 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     delayMix.setTargetValue(delay / 100.0f * 0.18f);
     if (delay > 0.01f && delayBuffer.getNumSamples() > n)
     {
+        const float subdivisions[] = { 0.095f, 0.19f, 0.38f };
+        const int sub = juce::jlimit(0, 2, (int) value("delaySubdivision"));
         const int delaySamples = juce::jlimit(1, delayBuffer.getNumSamples() - 1,
-            (int)std::round((0.12 + (delay / 100.0f) * 0.38) * currentSampleRate));
+            (int) std::round((subdivisions[sub] + (delay / 100.0f) * 0.24f) * currentSampleRate));
         const float mix = delayMix.getNextValue();
+        const float feedback = juce::jlimit(0.0f, 0.8f, delayFeedback / 100.0f);
+        const float tone = juce::jmap(delayTone, 0.0f, 100.0f, 0.05f, 0.85f);
+        float toneL = 0.0f, toneR = 0.0f;
         for (int i = 0; i < n; ++i)
         {
             const int write = (delayWritePos + i) % delayBuffer.getNumSamples();
@@ -401,12 +513,36 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
             const float inR = ch > 1 ? buffer.getSample(1, i) : inL;
             const float echoL = delayBuffer.getSample(0, read);
             const float echoR = delayBuffer.getSample(1, read);
-            delayBuffer.setSample(0, write, inL + echoL * 0.42f);
-            delayBuffer.setSample(1, write, inR + echoR * 0.42f);
-            buffer.addSample(0, i, echoL * mix);
-            if (ch > 1) buffer.addSample(1, i, echoR * mix);
+            toneL += (echoL - toneL) * tone;
+            toneR += (echoR - toneR) * tone;
+            delayBuffer.setSample(0, write, inL + toneL * feedback);
+            delayBuffer.setSample(1, write, inR + toneR * feedback);
+            buffer.addSample(0, i, toneL * mix);
+            if (ch > 1) buffer.addSample(1, i, toneR * mix);
         }
         delayWritePos = (delayWritePos + n) % delayBuffer.getNumSamples();
+    }
+
+    // Lightweight doubler: a short, filtered stereo spread. It is zero by default.
+    doublerMix.setTargetValue(doubler / 100.0f * 0.28f);
+    if (doubler > 0.01f && doublerBuffer.getNumSamples() > n)
+    {
+        const int spread = juce::jlimit(1, doublerBuffer.getNumSamples() - 1,
+            (int) std::round(0.012 * currentSampleRate + doubler * 0.00006 * currentSampleRate));
+        const float mix = doublerMix.getNextValue();
+        for (int i = 0; i < n; ++i)
+        {
+            const int write = (doublerWritePos + i) % doublerBuffer.getNumSamples();
+            const int read = (write - spread + doublerBuffer.getNumSamples()) % doublerBuffer.getNumSamples();
+            const float l = buffer.getSample(0, i);
+            const float r = ch > 1 ? buffer.getSample(1, i) : l;
+            const float echo = 0.5f * (doublerBuffer.getSample(0, read) + doublerBuffer.getSample(1, read));
+            doublerBuffer.setSample(0, write, l);
+            doublerBuffer.setSample(1, write, r);
+            buffer.setSample(0, i, l + echo * mix);
+            if (ch > 1) buffer.setSample(1, i, r - echo * mix * 0.35f);
+        }
+        doublerWritePos = (doublerWritePos + n) % doublerBuffer.getNumSamples();
     }
 
     for (int i = 0; i < n; ++i)
@@ -415,6 +551,11 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         for (int c = 0; c < ch; ++c)
             buffer.setSample(c, i, buffer.getSample(c, i) * g);
     }
+
+    double outSq = 0.0;
+    for (int c = 0; c < ch; ++c)
+        for (int i = 0; i < n; ++i) { const float x = buffer.getSample(c, i); outSq += (double)x * x; }
+    outputDb.store((float) juce::Decibels::gainToDecibels((float) std::sqrt(outSq / (double) std::max(1, n * ch)), -100.0f), std::memory_order_relaxed);
 }
 
 void VocalForgeAudioProcessor::getStateInformation(juce::MemoryBlock& destData)

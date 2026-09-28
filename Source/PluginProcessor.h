@@ -15,6 +15,7 @@ public:
 
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
+    juce::AudioProcessorParameter* getBypassParameter() const override { return apvts.getParameter("bypass"); }
 
     const juce::String getName() const override { return "AMR Vocal Mix"; }
     bool acceptsMidi() const override { return false; }
@@ -39,6 +40,8 @@ public:
     float getDetectedMidi() const noexcept { return pitchCorrector.getDetectedMidi(); }
     float getTargetMidi() const noexcept { return pitchCorrector.getTargetMidi(); }
     float getPitchConfidence() const noexcept { return pitchCorrector.getConfidence(); }
+    float getInputDb() const noexcept { return inputDb.load(std::memory_order_relaxed); }
+    float getOutputDb() const noexcept { return outputDb.load(std::memory_order_relaxed); }
 
 private:
     struct Analysis
@@ -59,6 +62,7 @@ private:
     juce::dsp::IIR::Filter<float> bodyFilterL, bodyFilterR;
     juce::dsp::IIR::Filter<float> presenceFilterL, presenceFilterR;
     juce::dsp::IIR::Filter<float> airFilterL, airFilterR;
+    juce::dsp::IIR::Filter<float> eqLowL, eqLowR, eqLowMidL, eqLowMidR, eqHighMidL, eqHighMidR, eqHighL, eqHighR;
     juce::dsp::IIR::Filter<float> deEssFilterL, deEssFilterR;
     juce::dsp::Compressor<float> compressorL, compressorR;
     juce::dsp::Limiter<float> limiterL, limiterR;
@@ -67,11 +71,11 @@ private:
     juce::AudioBuffer<float> wetBuffer;
     juce::AudioBuffer<float> delayBuffer;
     int delayWritePos = 0;
-    juce::SmoothedValue<float> delayMix;
+    int doublerWritePos = 0;
 
     VocalPitchCorrector pitchCorrector;
 
-    juce::SmoothedValue<float> inputGain, outputGain, drive, reverbMix, deEssGain, vocalMakeupGain;
+    juce::SmoothedValue<float> inputGain, outputGain, drive, reverbMix, delayMix, deEssGain, vocalMakeupGain, exciterMix, doublerMix;
     float deEssEnvelopeL = 0.0f;
     float deEssEnvelopeR = 0.0f;
 
@@ -85,11 +89,18 @@ private:
     std::atomic<float> smartDeess { 32.0f };
     std::atomic<float> smartSpace { 14.0f };
 
+    float lastEqLow = 999.0f, lastEqLowMid = 999.0f, lastEqHighMid = 999.0f, lastEqHigh = 999.0f;
+    float lastColor = 999.0f, lastDeessFocus = 999.0f, lastReverbDecay = 999.0f;
+    bool advancedFiltersInitialised = false;
+
     std::atomic<float> progress { 0.0f };
     std::atomic<bool> analysisReady { false };
     std::atomic<bool> analysisRequested { false };
     std::atomic<bool> analysisRunning { false };
+    int analysisUpdateSamples = 0;
     std::atomic<bool> bypass { false };
+    std::atomic<float> inputDb { -100.0f };
+    std::atomic<float> outputDb { -100.0f };
     Analysis analysis;
 
     float lastBodyDb = 999.0f, lastPresDb = 999.0f, lastAirDb = 999.0f;
@@ -98,6 +109,7 @@ private:
     int lastStyle = -1;
     bool filtersInitialised = false;
     bool reverbInitialised = false;
+    juce::AudioBuffer<float> doublerBuffer;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(VocalForgeAudioProcessor)
 };

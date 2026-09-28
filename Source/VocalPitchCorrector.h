@@ -41,7 +41,6 @@ private:
     int ringMask_ = 16383;
     int writePos_ = 0;
     int hopCounter_ = 0;
-    int detectCounter_ = 0;
 
     std::vector<float> ring_;
     juce::AudioBuffer<float> outBuffer_;
@@ -59,9 +58,6 @@ private:
     int root_ = 0;
     int scaleType_ = 0;
     bool enabled_ = true;
-
-    float cachedHz_ = 0.0f;
-    float cachedConfidence_ = 0.0f;
 
     float stableMidi_ = 0.0f;
     float stableTarget_ = 0.0f;
