@@ -25,7 +25,14 @@ jobs:
       - name: Build installer
         shell: powershell
         run: |
-          & "$env:ProgramFiles(x86)\Inno Setup 6\ISCC.exe" installer\VocalForge.iss
+          $isccCandidates = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
+          )
+          $iscc = $isccCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) { throw "Inno Setup compiler (ISCC.exe) was not found." }
+          & $iscc installer\VocalForge.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
