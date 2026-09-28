@@ -20,3 +20,5 @@ cmake --build build --config Release
 ```
 
 GitHub Actions builds the Windows VST3 and packages the installer.
+
+Build pipeline targets the current GitHub Windows runner toolchain.
