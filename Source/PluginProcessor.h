@@ -42,6 +42,8 @@ public:
     float getPitchConfidence() const noexcept { return pitchCorrector.getConfidence(); }
     float getInputDb() const noexcept { return inputDb.load(std::memory_order_relaxed); }
     float getOutputDb() const noexcept { return outputDb.load(std::memory_order_relaxed); }
+    float getGainMatchDb() const noexcept { return gainMatchDb.load(std::memory_order_relaxed); }
+    bool isAutoGainEnabled() const noexcept { return apvts.getRawParameterValue("autoGain")->load(std::memory_order_relaxed) > 0.5f; }
 
 private:
     struct Analysis
@@ -75,7 +77,7 @@ private:
 
     VocalPitchCorrector pitchCorrector;
 
-    juce::SmoothedValue<float> inputGain, outputGain, drive, reverbMix, delayMix, deEssGain, vocalMakeupGain, exciterMix, doublerMix;
+    juce::SmoothedValue<float> inputGain, outputGain, drive, reverbMix, delayMix, deEssGain, vocalMakeupGain, exciterMix, doublerMix, autoGainTrim;
     float deEssEnvelopeL = 0.0f;
     float deEssEnvelopeR = 0.0f;
 
@@ -101,6 +103,7 @@ private:
     std::atomic<bool> bypass { false };
     std::atomic<float> inputDb { -100.0f };
     std::atomic<float> outputDb { -100.0f };
+    std::atomic<float> gainMatchDb { 0.0f };
     Analysis analysis;
 
     float lastBodyDb = 999.0f, lastPresDb = 999.0f, lastAirDb = 999.0f;
