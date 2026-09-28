@@ -157,8 +157,10 @@ void VocalForgeAudioProcessor::applySmartMix()
     smartSpace.store(spaceValue, std::memory_order_relaxed);
     smartMixActive.store(true, std::memory_order_release);
 }
-\n
-\nvoid VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+
+
+
+void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
     juce::ScopedNoDenormals noDenormals;
 
