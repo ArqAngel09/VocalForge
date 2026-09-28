@@ -40,7 +40,7 @@ private:
     AMRVocalLookAndFeel lookAndFeel;
 
     juce::TextButton analyzeButton { "ESCUCHAR Y ANALIZAR" }, autoButton { "AUTO" };
-    juce::TextButton vocalAssistTab { "VOCAL ASSIST" }, simpleTab { "SIMPLE" }, advancedTab { "ADVANCED" };
+    juce::TextButton vocalAssistTab { "VOCAL ENGINE" }, simpleTab { "QUICK" }, advancedTab { "PRO" };
     juce::TextButton bypassButton { "Bypass" }, saveButton { "▣" }, abButton { "A | B" }, settingsButton { "⚙" };
     juce::Label title, subtitle, status;
     juce::Label presetLabel;
