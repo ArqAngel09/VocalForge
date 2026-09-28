@@ -1,6 +1,8 @@
 #include "PluginEditor.h"
 #include "AMRLogo.h"
 
+using APVTS = juce::AudioProcessorValueTreeState;
+
 namespace
 {
     const juce::Colour BG(0xff080d12), PANEL(0xff10171d), PANEL2(0xff171f26);
@@ -463,8 +465,6 @@ void VocalForgeAudioProcessorEditor::paint(juce::Graphics& g)
         labelText(g,"Cuatro macros directos para llegar rápido al punto de partida.",{a.getX()+28,y+47,430,18},10.5f,MUTED);
         drawPitchGraph(g,{a.getX()+28,y+72,a.getWidth()-56,130});
         labelText(g,"PITCH / VOICE PROFILE",{a.getX()+42,y+82,220,16},9,CYAN2);
-        drawKnobInfo(g,comp,"Dynamics"); drawKnobInfo(g,magic,"Character");
-        drawKnobInfo(g,space,"Space"); drawKnobInfo(g,delay,"Space");
     }
     else
     {
