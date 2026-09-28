@@ -45,10 +45,11 @@ private:
     juce::Label title, subtitle, status;
     juce::Label presetLabel;
     juce::ComboBox preset, key, scale, mode, style;
-    juce::Slider retune, speed, body, presence, air, comp, sat, deess, space, output;
+    juce::Slider retune, speed, body, presence, air, comp, sat, deess, space, delay, output;
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> autoAttach;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> retuneAttach, speedAttach, bodyAttach, presenceAttach, airAttach, compAttach, satAttach, deessAttach, spaceAttach, outputAttach;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> retuneAttach, speedAttach, bodyAttach, presenceAttach, airAttach, compAttach, satAttach, deessAttach, spaceAttach, delayAttach, outputAttach;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bypassAttach;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> keyAttach, scaleAttach, modeAttach, styleAttach;
 
     int activePage = 0;

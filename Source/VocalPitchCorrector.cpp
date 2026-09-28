@@ -48,6 +48,9 @@ void VocalPitchCorrector::reset()
     std::fill(analysisBuffer_.begin(), analysisBuffer_.end(), 0.0f);
     writePos_ = 0;
     hopCounter_ = 0;
+    detectCounter_ = 0;
+    cachedHz_ = 0.0f;
+    cachedConfidence_ = 0.0f;
     currentRatio_ = 1.0f;
     nextGrainReadPos_ = 0.0;
     pitchReadInitialised_ = false;
@@ -243,30 +246,37 @@ void VocalPitchCorrector::process(juce::AudioBuffer<float>& buffer, int numSampl
         writePos_ = (writePos_ + 1) & ringMask_;
     }
 
-    const int analysisN = juce::jmin((int) analysisBuffer_.size(), ringSize_ - 1);
-    int p = (writePos_ - analysisN + ringSize_) & ringMask_;
-    for (int i = 0; i < analysisN; ++i)
-        analysisBuffer_[(size_t)i] = ring_[(size_t)((p + i) & ringMask_)];
-
-    float conf = 0.0f;
-    const float hz = detectPitch(analysisBuffer_.data(), analysisN, conf);
-    confidence_.store(conf, std::memory_order_relaxed);
-
-    if (hz > 0.0f)
+    // Pitch detection is intentionally decimated: the YIN pass is the most
+    // expensive part of the correction engine and does not need to run for every
+    // audio block. The shifter remains sample-accurate between detector updates.
+    detectCounter_ += numSamples;
+    if (detectCounter_ >= hopSize_)
     {
-        const float midi = 69.0f + 12.0f * std::log2(hz / 440.0f);
-        const float target = quantizeMidi(midi);
+        detectCounter_ %= hopSize_;
 
-        detectedMidi_.store(midi, std::memory_order_relaxed);
-        targetMidi_.store(target, std::memory_order_relaxed);
-        smoothTarget(target, midi, conf);
-    }
-    else
-    {
-        confidence_.store(0.0f, std::memory_order_relaxed);
-        // Stop pitch shifting quickly when the detector loses a reliable voiced
-        // fundamental. This keeps breaths/consonants from being dragged by the
-        // previous note and removes a common source of robotic doubling.        currentRatio_ = 1.0f + (currentRatio_ - 1.0f) * 0.70f;
+        const int analysisN = juce::jmin((int) analysisBuffer_.size(), ringSize_ - 1);
+        int p = (writePos_ - analysisN + ringSize_) & ringMask_;
+        for (int i = 0; i < analysisN; ++i)
+            analysisBuffer_[(size_t)i] = ring_[(size_t)((p + i) & ringMask_)];
+
+        float conf = 0.0f;
+        cachedHz_ = detectPitch(analysisBuffer_.data(), analysisN, conf);
+        cachedConfidence_ = conf;
+        confidence_.store(conf, std::memory_order_relaxed);
+
+        if (cachedHz_ > 0.0f)
+        {
+            const float midi = 69.0f + 12.0f * std::log2(cachedHz_ / 440.0f);
+            const float target = quantizeMidi(midi);
+            detectedMidi_.store(midi, std::memory_order_relaxed);
+            targetMidi_.store(target, std::memory_order_relaxed);
+            smoothTarget(target, midi, conf);
+        }
+        else
+        {
+            confidence_.store(0.0f, std::memory_order_relaxed);
+            currentRatio_ = 1.0f + (currentRatio_ - 1.0f) * 0.70f;
+        }
     }
 
     if (numSamples > outBuffer_.getNumSamples())

@@ -33,7 +33,9 @@ APVTS::ParameterLayout VocalForgeAudioProcessor::createParameterLayout()
     p.push_back(std::make_unique<juce::AudioParameterFloat>("drive", "Saturation", juce::NormalisableRange<float>(0.f, 100.f, 0.01f), 10.f));
     p.push_back(std::make_unique<juce::AudioParameterFloat>("deess", "De-Esser", juce::NormalisableRange<float>(0.f, 100.f, 0.01f), 32.f));
     p.push_back(std::make_unique<juce::AudioParameterFloat>("space", "Space", juce::NormalisableRange<float>(0.f, 100.f, 0.01f), 14.f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("delay", "Delay", juce::NormalisableRange<float>(0.f, 100.f, 0.01f), 0.f));
     p.push_back(std::make_unique<juce::AudioParameterFloat>("output", "Output", juce::NormalisableRange<float>(-12.f, 6.f, 0.01f), -0.8f));
+    p.push_back(std::make_unique<juce::AudioParameterBool>("bypass", "Bypass", false));
     p.push_back(std::make_unique<juce::AudioParameterBool>("auto", "Auto after 15 seconds", true));
     p.push_back(std::make_unique<juce::AudioParameterChoice>("style", "Style", styleChoices(), 1));
     return { p.begin(), p.end() };
@@ -55,12 +57,16 @@ void VocalForgeAudioProcessor::prepareToPlay(double sr, int samplesPerBlock)
     reverb.setSampleRate(sr);
     wetBuffer.setSize(2, samplesPerBlock);
     wetBuffer.clear();
+    delayBuffer.setSize(2, (int)std::ceil(sr * 2.0));
+    delayBuffer.clear();
+    delayWritePos = 0;
 
     inputGain.reset(sr, 0.03);
     outputGain.reset(sr, 0.03);
     vocalMakeupGain.reset(sr, 0.05);
     drive.reset(sr, 0.03);
     reverbMix.reset(sr, 0.05);
+    delayMix.reset(sr, 0.05);
     deEssGain.reset(sr, 0.02);
 
     pitchCorrector.prepare(sr, samplesPerBlock);
@@ -68,6 +74,11 @@ void VocalForgeAudioProcessor::prepareToPlay(double sr, int samplesPerBlock)
     progress.store(0.f);
     analysisReady.store(false);
     analysisRequested.store(false);
+    analysisRunning.store(false);
+    bypass.store(false, std::memory_order_release);
+    filtersInitialised = false;
+    reverbInitialised = false;
+    lastBodyDb = lastPresDb = lastAirDb = lastComp = lastSpace = 999.0f;
     deEssEnvelopeL = 0.0f;
     deEssEnvelopeR = 0.0f;
 }
@@ -84,6 +95,7 @@ bool VocalForgeAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts
 
 void VocalForgeAudioProcessor::analyseBlock(const juce::AudioBuffer<float>& b)
 {
+    if (!analysisRunning.load(std::memory_order_acquire)) return;
     const int n = b.getNumSamples();
     if (n <= 0 || b.getNumChannels() == 0 || analysis.seconds >= 15.0) return;
 
@@ -107,17 +119,23 @@ void VocalForgeAudioProcessor::analyseBlock(const juce::AudioBuffer<float>& b)
     analysis.seconds = (double) analysis.samples / currentSampleRate;
     progress.store((float) juce::jlimit(0.0, 1.0, analysis.seconds / 15.0));
 
-    if (analysis.seconds >= 15.0 && apvts.getRawParameterValue("auto")->load() > 0.5f)
+    if (analysis.seconds >= 15.0)
+    {
+        analysisRunning.store(false, std::memory_order_release);
         analysisReady.store(true, std::memory_order_release);
+    }
 }
 
 void VocalForgeAudioProcessor::triggerAnalysis()
 {
+    // Explicit user action starts a fresh 15-second capture.
+    // The analysis remains idle until this method is called.
     analysis.reset();
-    progress.store(0.f);
-    analysisReady.store(false);
-    analysisRequested.store(true, std::memory_order_release);
+    progress.store(0.0f, std::memory_order_release);
+    analysisReady.store(false, std::memory_order_release);
     smartMixActive.store(false, std::memory_order_release);
+    analysisRunning.store(true, std::memory_order_release);
+    analysisRequested.store(true, std::memory_order_release);
 }
 
 float VocalForgeAudioProcessor::getAnalysisProgress() const { return progress.load(); }
@@ -141,7 +159,8 @@ void VocalForgeAudioProcessor::applySmartMix()
     const double crest = analysis.peak / std::max(0.0001, rms);
     const double bright = analysis.high / std::max(1.0, analysis.mid);
 
-    const float inputTrim = (float) juce::jlimit(-3.0, 6.0, 20.0 * std::log10(0.18 / std::max(0.025, rms)));
+    // Smart Mix may attenuate a hot recording, but never boosts the input stage.
+    const float inputTrim = (float) juce::jlimit(-6.0, 0.0, 20.0 * std::log10(0.18 / std::max(0.025, rms)));
     const float body = (float) juce::jmap((float) juce::jlimit(0.05, 0.8, rms), 0.05f, 0.8f, 3.0f, -1.5f);
     const float comp = (float) juce::jlimit(20.0, 82.0, 68.0 - crest * 7.0);
     const float air = (float) juce::jlimit(-1.0, 7.0, 1.8 + (bright - 0.35) * 2.4);
@@ -167,13 +186,22 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
 {
     juce::ScopedNoDenormals noDenormals;
 
+    const bool isBypassed = apvts.getRawParameterValue("bypass")->load(std::memory_order_relaxed) > 0.5f;
+    if (isBypassed)
+    {
+        analysisRunning.store(false, std::memory_order_release);
+        analysisRequested.store(false, std::memory_order_release);
+        return;
+    }
+
     if (analysisRequested.exchange(false, std::memory_order_acq_rel))
     {
         analysis.reset();
         progress.store(0.0f, std::memory_order_relaxed);
     }
 
-    analyseBlock(buffer);
+    if (analysisRunning.load(std::memory_order_acquire))
+        analyseBlock(buffer);
     if (isAnalysisReady())
         applySmartMix();
 
@@ -201,6 +229,7 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     float sat = useSmart ? smartDrive.load(std::memory_order_relaxed) : value("drive");
     float deess = useSmart ? smartDeess.load(std::memory_order_relaxed) : value("deess");
     float space = useSmart ? smartSpace.load(std::memory_order_relaxed) : value("space");
+    const float delay = value("delay");
 
     switch (style)
     {
@@ -235,30 +264,43 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     pitchCorrector.setScale(root, scale);
     pitchCorrector.process(buffer, n);
 
-    hpFilterL.coefficients = juce::dsp::IIR::Coefficients<float>::makeHighPass(currentSampleRate, 70.0);
-    hpFilterR.coefficients = hpFilterL.coefficients;
-    bodyFilterL.coefficients = juce::dsp::IIR::Coefficients<float>::makeLowShelf(currentSampleRate, 180.0, 0.65f, juce::Decibels::decibelsToGain(bodyDb));
-    bodyFilterR.coefficients = bodyFilterL.coefficients;
-    presenceFilterL.coefficients = juce::dsp::IIR::Coefficients<float>::makePeakFilter(currentSampleRate, 3200.0, 0.8f, juce::Decibels::decibelsToGain(presDb));
-    presenceFilterR.coefficients = presenceFilterL.coefficients;
-    airFilterL.coefficients = juce::dsp::IIR::Coefficients<float>::makeHighShelf(currentSampleRate, 9000.0, 0.7f, juce::Decibels::decibelsToGain(airDb));
-    airFilterR.coefficients = airFilterL.coefficients;
-    deEssFilterL.coefficients = juce::dsp::IIR::Coefficients<float>::makeHighPass(currentSampleRate, 5500.0);
-    deEssFilterR.coefficients = deEssFilterL.coefficients;
+    // Rebuild IIR coefficients only when a relevant parameter actually changes.
+    // Allocating new coefficient objects every audio block is unnecessarily expensive.
+    if (!filtersInitialised || bodyDb != lastBodyDb || presDb != lastPresDb || airDb != lastAirDb)
+    {
+        hpFilterL.coefficients = juce::dsp::IIR::Coefficients<float>::makeHighPass(currentSampleRate, 70.0);
+        hpFilterR.coefficients = hpFilterL.coefficients;
+        bodyFilterL.coefficients = juce::dsp::IIR::Coefficients<float>::makeLowShelf(currentSampleRate, 180.0, 0.65f, juce::Decibels::decibelsToGain(bodyDb));
+        bodyFilterR.coefficients = bodyFilterL.coefficients;
+        presenceFilterL.coefficients = juce::dsp::IIR::Coefficients<float>::makePeakFilter(currentSampleRate, 3200.0, 0.8f, juce::Decibels::decibelsToGain(presDb));
+        presenceFilterR.coefficients = presenceFilterL.coefficients;
+        airFilterL.coefficients = juce::dsp::IIR::Coefficients<float>::makeHighShelf(currentSampleRate, 9000.0, 0.7f, juce::Decibels::decibelsToGain(airDb));
+        airFilterR.coefficients = airFilterL.coefficients;
+        deEssFilterL.coefficients = juce::dsp::IIR::Coefficients<float>::makeHighPass(currentSampleRate, 5500.0);
+        deEssFilterR.coefficients = deEssFilterL.coefficients;
+        lastBodyDb = bodyDb; lastPresDb = presDb; lastAirDb = airDb;
+        filtersInitialised = true;
+    }
 
     const float threshold = -19.0f - comp * 0.09f;
     const float ratio = 1.25f + comp * 0.032f;
-    const float makeupDb = useSmart
-        ? juce::jmap(comp, 20.0f, 82.0f, 1.5f, 5.5f)
-        : juce::jmap(comp, 0.0f, 100.0f, 0.0f, 4.0f);
+    // Never add makeup gain in the normal/default path. Smart Mix can add
+    // controlled makeup only after the user explicitly runs the analysis.
+    const float makeupDb = useSmart ? juce::jmap(comp, 20.0f, 82.0f, 1.0f, 3.0f) : 0.0f;
     vocalMakeupGain.setTargetValue(juce::Decibels::decibelsToGain(makeupDb));
     const float makeupGain = vocalMakeupGain.getNextValue();
-    compressorL.setThreshold(threshold); compressorR.setThreshold(threshold);
-    compressorL.setRatio(ratio); compressorR.setRatio(ratio);
-    compressorL.setAttack(5.0f); compressorR.setAttack(5.0f);
-    compressorL.setRelease(85.0f); compressorR.setRelease(85.0f);
-    limiterL.setThreshold(-1.1f); limiterR.setThreshold(-1.1f);
-    limiterL.setRelease(70.0f); limiterR.setRelease(70.0f);
+    if (comp != lastComp || !filtersInitialised)
+    {
+        compressorL.setThreshold(threshold); compressorR.setThreshold(threshold);
+        compressorL.setRatio(ratio); compressorR.setRatio(ratio);
+        compressorL.setAttack(5.0f); compressorR.setAttack(5.0f);
+        lastComp = comp;
+    }
+    if (!filtersInitialised)
+    {
+        limiterL.setThreshold(-1.1f); limiterR.setThreshold(-1.1f);
+        limiterL.setRelease(70.0f); limiterR.setRelease(70.0f);
+    }
 
     auto processOne = [this, n, bodyDb, presDb, airDb, comp, sat, deess, makeupGain]
         (juce::AudioBuffer<float>& b, int c,
@@ -316,13 +358,18 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
                    deEssFilterL, compressorL, limiterL, deEssEnvelopeL);
     }
 
-    reverbMix.setTargetValue(space / 100.0f * 0.16f);
-    reverbParams.roomSize = 0.28f + space * 0.004f;
-    reverbParams.damping = 0.55f;
-    reverbParams.wetLevel = 0.62f;
-    reverbParams.dryLevel = 0.0f;
-    reverbParams.width = 0.9f;
-    reverb.setParameters(reverbParams);
+    if (!reverbInitialised || space != lastSpace)
+    {
+        reverbMix.setTargetValue(space / 100.0f * 0.16f);
+        reverbParams.roomSize = 0.28f + space * 0.004f;
+        reverbParams.damping = 0.55f;
+        reverbParams.wetLevel = 0.62f;
+        reverbParams.dryLevel = 0.0f;
+        reverbParams.width = 0.9f;
+        reverb.setParameters(reverbParams);
+        lastSpace = space;
+        reverbInitialised = true;
+    }
 
     if (space > 0.01f && ch > 1 && n <= wetBuffer.getNumSamples())
     {
@@ -336,6 +383,30 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
             buffer.addSample(0, i, wetBuffer.getSample(0, i) * wm);
             buffer.addSample(1, i, wetBuffer.getSample(1, i) * wm);
         }
+    }
+
+    // Independent, lightweight stereo delay. Default is 0%, so it never changes
+    // the sound until the user enables it.
+    delayMix.setTargetValue(delay / 100.0f * 0.18f);
+    if (delay > 0.01f && delayBuffer.getNumSamples() > n)
+    {
+        const int delaySamples = juce::jlimit(1, delayBuffer.getNumSamples() - 1,
+            (int)std::round((0.12 + (delay / 100.0f) * 0.38) * currentSampleRate));
+        const float mix = delayMix.getNextValue();
+        for (int i = 0; i < n; ++i)
+        {
+            const int write = (delayWritePos + i) % delayBuffer.getNumSamples();
+            const int read = (write - delaySamples + delayBuffer.getNumSamples()) % delayBuffer.getNumSamples();
+            const float inL = buffer.getSample(0, i);
+            const float inR = ch > 1 ? buffer.getSample(1, i) : inL;
+            const float echoL = delayBuffer.getSample(0, read);
+            const float echoR = delayBuffer.getSample(1, read);
+            delayBuffer.setSample(0, write, inL + echoL * 0.42f);
+            delayBuffer.setSample(1, write, inR + echoR * 0.42f);
+            buffer.addSample(0, i, echoL * mix);
+            if (ch > 1) buffer.addSample(1, i, echoR * mix);
+        }
+        delayWritePos = (delayWritePos + n) % delayBuffer.getNumSamples();
     }
 
     for (int i = 0; i < n; ++i)
