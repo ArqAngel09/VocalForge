@@ -237,6 +237,11 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     const int ch = buffer.getNumChannels();
     if (n <= 0 || ch == 0) return;
 
+    double inSq = 0.0;
+    for (int c = 0; c < ch; ++c)
+        for (int i = 0; i < n; ++i) { const float x = buffer.getSample(c, i); inSq += (double)x * x; }
+    inputDb.store((float) juce::Decibels::gainToDecibels(std::sqrt(inSq / std::max(1, n * ch)), -100.0f), std::memory_order_relaxed);
+
     auto value = [this](const char* id) { return apvts.getRawParameterValue(id)->load(std::memory_order_relaxed); };
 
     const float inDb = value("input");
@@ -525,6 +530,11 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         for (int c = 0; c < ch; ++c)
             buffer.setSample(c, i, buffer.getSample(c, i) * g);
     }
+
+    double outSq = 0.0;
+    for (int c = 0; c < ch; ++c)
+        for (int i = 0; i < n; ++i) { const float x = buffer.getSample(c, i); outSq += (double)x * x; }
+    outputDb.store((float) juce::Decibels::gainToDecibels(std::sqrt(outSq / std::max(1, n * ch)), -100.0f), std::memory_order_relaxed);
 }
 
 void VocalForgeAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
