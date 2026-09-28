@@ -11,14 +11,14 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(JUCE)
 
 juce_add_plugin(VocalForge
-    COMPANY_NAME "VocalForge"
-    BUNDLE_ID "com.vocalforge.plugin"
+    COMPANY_NAME "Angel Music Records"
+    BUNDLE_ID "com.angelmusicrecords.amrvocalmix"
     PLUGIN_MANUFACTURER_CODE VFor
     PLUGIN_CODE Vc01
     FORMATS VST3 Standalone
-    PRODUCT_NAME "VocalForge"
-    PLUGIN_NAME "VocalForge"
-    DESCRIPTION "Adaptive vocal mixing assistant"
+    PRODUCT_NAME "AMR Vocal Mix"
+    PLUGIN_NAME "AMR Vocal Mix"
+    DESCRIPTION "Professional adaptive vocal mixing processor"
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT FALSE
     NEEDS_MIDI_OUTPUT FALSE
@@ -36,6 +36,7 @@ target_sources(VocalForge PRIVATE
     Source/VocalPitchCorrector.h
     Source/PluginEditor.cpp
     Source/PluginEditor.h
+    Source/AMRLogo.h
 )
 
 target_compile_features(VocalForge PRIVATE cxx_std_17)
