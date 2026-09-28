@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(VocalForge VERSION 1.0.0 LANGUAGES C CXX)
+project(VocalForge VERSION 2.0.0 LANGUAGES C CXX)
 
 include(FetchContent)
 FetchContent_Declare(
@@ -32,6 +32,8 @@ juce_generate_juce_header(VocalForge)
 target_sources(VocalForge PRIVATE
     Source/PluginProcessor.cpp
     Source/PluginProcessor.h
+    Source/VocalPitchCorrector.cpp
+    Source/VocalPitchCorrector.h
     Source/PluginEditor.cpp
     Source/PluginEditor.h
 )
