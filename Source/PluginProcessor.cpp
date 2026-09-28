@@ -319,7 +319,7 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     // Rebuild IIR coefficients only when a relevant parameter actually changes.
     // Allocating new coefficient objects every audio block is unnecessarily expensive.
     if (!filtersInitialised || bodyDb != lastBodyDb || presDb != lastPresDb || airDb != lastAirDb
-        || eqLow != lastEqLow || eqLowMid != lastEqLowMid || eqHighMid != lastEqHighMid || eqHigh != lastEqHighMid)
+        || eqLow != lastEqLow || eqLowMid != lastEqLowMid || eqHighMid != lastEqHighMid || eqHigh != lastEqHigh)
     {
         hpFilterL.coefficients = juce::dsp::IIR::Coefficients<float>::makeHighPass(currentSampleRate, 70.0);
         hpFilterR.coefficients = hpFilterL.coefficients;
@@ -437,16 +437,18 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
                    deEssFilterL, compressorL, limiterL, deEssEnvelopeL);
     }
 
-    if (!reverbInitialised || space != lastSpace)
+    if (!reverbInitialised || space != lastSpace || spaceTime != lastReverbDecay)
     {
         reverbMix.setTargetValue(space / 100.0f * 0.16f);
-        reverbParams.roomSize = 0.28f + space * 0.004f;
-        reverbParams.damping = 0.55f;
+        const float typeSize = reverbType == 0 ? 0.30f : (reverbType == 1 ? 0.52f : 0.78f);
+        reverbParams.roomSize = juce::jlimit(0.12f, 0.92f, typeSize + space * 0.0025f + spaceTime * 0.025f);
+        reverbParams.damping = reverbType == 1 ? 0.35f : 0.55f;
         reverbParams.wetLevel = 0.62f;
         reverbParams.dryLevel = 0.0f;
         reverbParams.width = 0.9f;
         reverb.setParameters(reverbParams);
         lastSpace = space;
+        lastReverbDecay = spaceTime;
         reverbInitialised = true;
     }
 
@@ -469,9 +471,14 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     delayMix.setTargetValue(delay / 100.0f * 0.18f);
     if (delay > 0.01f && delayBuffer.getNumSamples() > n)
     {
+        const float subdivisions[] = { 0.095f, 0.19f, 0.38f };
+        const int sub = juce::jlimit(0, 2, (int) value("delaySubdivision"));
         const int delaySamples = juce::jlimit(1, delayBuffer.getNumSamples() - 1,
-            (int)std::round((0.12 + (delay / 100.0f) * 0.38) * currentSampleRate));
+            (int) std::round((subdivisions[sub] + (delay / 100.0f) * 0.24f) * currentSampleRate));
         const float mix = delayMix.getNextValue();
+        const float feedback = juce::jlimit(0.0f, 0.8f, delayFeedback / 100.0f);
+        const float tone = juce::jmap(delayTone, 0.0f, 100.0f, 0.05f, 0.85f);
+        float toneL = 0.0f, toneR = 0.0f;
         for (int i = 0; i < n; ++i)
         {
             const int write = (delayWritePos + i) % delayBuffer.getNumSamples();
@@ -480,12 +487,36 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
             const float inR = ch > 1 ? buffer.getSample(1, i) : inL;
             const float echoL = delayBuffer.getSample(0, read);
             const float echoR = delayBuffer.getSample(1, read);
-            delayBuffer.setSample(0, write, inL + echoL * 0.42f);
-            delayBuffer.setSample(1, write, inR + echoR * 0.42f);
-            buffer.addSample(0, i, echoL * mix);
-            if (ch > 1) buffer.addSample(1, i, echoR * mix);
+            toneL += (echoL - toneL) * tone;
+            toneR += (echoR - toneR) * tone;
+            delayBuffer.setSample(0, write, inL + toneL * feedback);
+            delayBuffer.setSample(1, write, inR + toneR * feedback);
+            buffer.addSample(0, i, toneL * mix);
+            if (ch > 1) buffer.addSample(1, i, toneR * mix);
         }
         delayWritePos = (delayWritePos + n) % delayBuffer.getNumSamples();
+    }
+
+    // Lightweight doubler: a short, filtered stereo spread. It is zero by default.
+    doublerMix.setTargetValue(doubler / 100.0f * 0.28f);
+    if (doubler > 0.01f && doublerBuffer.getNumSamples() > n)
+    {
+        const int spread = juce::jlimit(1, doublerBuffer.getNumSamples() - 1,
+            (int) std::round(0.012 * currentSampleRate + doubler * 0.00006 * currentSampleRate));
+        const float mix = doublerMix.getNextValue();
+        for (int i = 0; i < n; ++i)
+        {
+            const int write = (doublerWritePos + i) % doublerBuffer.getNumSamples();
+            const int read = (write - spread + doublerBuffer.getNumSamples()) % doublerBuffer.getNumSamples();
+            const float l = buffer.getSample(0, i);
+            const float r = ch > 1 ? buffer.getSample(1, i) : l;
+            const float echo = 0.5f * (doublerBuffer.getSample(0, read) + doublerBuffer.getSample(1, read));
+            doublerBuffer.setSample(0, write, l);
+            doublerBuffer.setSample(1, write, r);
+            buffer.setSample(0, i, l + echo * mix);
+            if (ch > 1) buffer.setSample(1, i, r - echo * mix * 0.35f);
+        }
+        doublerWritePos = (doublerWritePos + n) % doublerBuffer.getNumSamples();
     }
 
     for (int i = 0; i < n; ++i)
