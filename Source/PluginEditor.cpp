@@ -6,7 +6,7 @@ VocalForgeAudioProcessorEditor::VocalForgeAudioProcessorEditor(VocalForgeAudioPr
     setSize(900, 590);
 
     title.setText("VOCALFORGE 2.0", juce::dontSendNotification);
-    title.setFont(juce::Font(juce::FontOptions{}.withHeight(28.0f).withStyle(juce::Font::bold)));
+    title.setFont(juce::Font(juce::FontOptions{}.withHeight(28.0f).withStyle("Bold")));
     addAndMakeVisible(title);
 
     subtitle.setText("Natural pitch correction • adaptive vocal finishing", juce::dontSendNotification);
@@ -42,7 +42,7 @@ VocalForgeAudioProcessorEditor::VocalForgeAudioProcessorEditor(VocalForgeAudioPr
     modeAttach = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(processor.apvts, "mode", mode);
     styleAttach = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(processor.apvts, "style", style);
 
-    pitchLabel.setFont(juce::Font(juce::FontOptions{}.withHeight(15.0f).withStyle(juce::Font::bold)));
+    pitchLabel.setFont(juce::Font(juce::FontOptions{}.withHeight(15.0f).withStyle("Bold")));
     addAndMakeVisible(pitchLabel);
     keyLabel.setText("KEY / MODE", juce::dontSendNotification);
     keyLabel.setFont(juce::Font(juce::FontOptions{}.withHeight(11.0f)));
@@ -83,7 +83,7 @@ void VocalForgeAudioProcessorEditor::paint(juce::Graphics& g)
     g.fillRoundedRectangle(18, 160, (float)getWidth()-36, (float)getHeight()-178, 18.0f);
 
     g.setColour(juce::Colour(0xffe8edf3));
-    g.setFont(juce::Font(11.0f));
+    g.setFont(juce::Font(juce::FontOptions{}.withHeight(11.0f)));
     g.drawFittedText("RETUNE", retune.getX(), retune.getY()-2, retune.getWidth(), 18, juce::Justification::centred, 1);
     g.drawFittedText("SPEED", speed.getX(), speed.getY()-2, speed.getWidth(), 18, juce::Justification::centred, 1);
 
@@ -96,31 +96,4 @@ void VocalForgeAudioProcessorEditor::paint(juce::Graphics& g)
     g.fillRoundedRectangle(36, 132, 430, 6, 3.0f);
     g.setColour(juce::Colour(0xff7ee787));
     g.fillRoundedRectangle(36, 132, 430 * processor.getAnalysisProgress(), 6, 3.0f);
-}
-
-void VocalForgeAudioProcessorEditor::resized()
-{
-    title.setBounds(36, 30, 310, 34);
-    subtitle.setBounds(38, 68, 360, 22);
-    analyzeButton.setBounds(680, 30, 180, 38);
-    autoButton.setBounds(670, 74, 190, 24);
-    pitchLabel.setBounds(36, 108, 300, 24);
-    status.setBounds(430, 108, 220, 24);
-
-    keyLabel.setBounds(390, 42, 100, 18);
-    key.setBounds(390, 62, 82, 28);
-    scale.setBounds(480, 62, 92, 28);
-    mode.setBounds(580, 62, 82, 28);
-    style.setBounds(390, 94, 110, 28);
-
-    retune.setBounds(36, 180, 150, 100);
-    speed.setBounds(196, 180, 150, 100);
-
-    const int left = 36, top = 315, w = 160, h = 105, gapX = 14, gapY = 30;
-    juce::Slider* ss[] = { &body,&presence,&air,&comp,&sat,&deess,&space,&output };
-    for (int i = 0; i < 8; ++i)
-    {
-        const int col = i % 4, row = i / 4;
-        ss[i]->setBounds(left + col * (w + gapX), top + row * (h + gapY), w, h);
-    }
 }
