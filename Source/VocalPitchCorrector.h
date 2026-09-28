@@ -38,7 +38,9 @@ private:
     int writePos_ = 0;
     int hopCounter_ = 0;
     std::vector<float> ring_;
-    std::vector<float> grainBuffer_;
+    juce::AudioBuffer<float> outBuffer_;
+    juce::AudioBuffer<float> weightBuffer_;
+    std::vector<float> analysisBuffer_;
 
     Grain grains_[2];
     float currentRatio_ = 1.0f;
