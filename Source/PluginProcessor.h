@@ -68,11 +68,12 @@ private:
 
     VocalPitchCorrector pitchCorrector;
 
-    juce::SmoothedValue<float> inputGain, outputGain, drive, reverbMix, deEssGain;
+    juce::SmoothedValue<float> inputGain, outputGain, drive, reverbMix, deEssGain, vocalMakeupGain;
     float deEssEnvelopeL = 0.0f;
     float deEssEnvelopeR = 0.0f;
 
     std::atomic<bool> smartMixActive { false };
+    std::atomic<float> smartInputTrim { 0.0f };
     std::atomic<float> smartBody { 0.0f };
     std::atomic<float> smartPresence { 2.0f };
     std::atomic<float> smartAir { 2.0f };
