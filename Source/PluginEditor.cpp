@@ -11,7 +11,10 @@ namespace
                    juce::Colour c, juce::Justification j = juce::Justification::left)
     {
         g.setColour(c);
-        g.setFont(juce::Font(juce::FontOptions{}.withHeight(size)));
+        auto font = juce::Font(juce::FontOptions{}.withHeight(size));
+        font.setFallbackEnabled(true);
+        font.setPreferredFallbackFamilies({ "Segoe UI", "Arial", "Noto Sans" });
+        g.setFont(font);
         g.drawFittedText(s, r.toNearestInt(), j, 1);
     }
 }
@@ -81,7 +84,7 @@ void AMRVocalLookAndFeel::drawComboBox(juce::Graphics& g, int w, int h, bool, in
     g.strokePath(p, juce::PathStrokeType(1.6f));
 }
 
-juce::Font AMRVocalLookAndFeel::getComboBoxFont(juce::ComboBox&) { return juce::Font(juce::FontOptions{}.withHeight(13.0f)); }
+juce::Font AMRVocalLookAndFeel::getComboBoxFont(juce::ComboBox&) { auto f = juce::Font(juce::FontOptions{}.withHeight(13.0f)); f.setFallbackEnabled(true); f.setPreferredFallbackFamilies({ "Segoe UI", "Arial", "Noto Sans" }); return f; }
 
 VocalForgeAudioProcessorEditor::VocalForgeAudioProcessorEditor(VocalForgeAudioProcessor& p)
     : AudioProcessorEditor(&p), processor(p)
@@ -180,25 +183,55 @@ void VocalForgeAudioProcessorEditor::drawLogo(juce::Graphics& g, juce::Rectangle
 void VocalForgeAudioProcessorEditor::drawPitchGraph(juce::Graphics& g, juce::Rectangle<float> r)
 {
     g.setColour(juce::Colour(0xff02080d)); g.fillRoundedRectangle(r, 5.0f);
-    g.setColour(juce::Colour(0xff123143));
-    for (int i=1;i<12;++i) g.drawVerticalLine((int)(r.getX()+r.getWidth()*i/12.0f), r.getY(), r.getBottom());
-    for (int i=1;i<5;++i) g.drawHorizontalLine((int)(r.getY()+r.getHeight()*i/5.0f), r.getX(), r.getRight());
 
-    const float midi = processor.getDetectedMidi() > 0.0f ? processor.getDetectedMidi() : 64.0f;
-    juce::Path p;
-    for (int i=0;i<80;++i)
+    // Real vocal range shown by the pitch engine: approximately C2-C6.
+    constexpr float lowMidi = 36.0f;
+    constexpr float highMidi = 84.0f;
+
+    g.setColour(juce::Colour(0xff123143));
+    for (int octave = 0; octave <= 4; ++octave)
     {
-        const float x=r.getX()+r.getWidth()*i/79.0f;
-        const float wobble=0.08f*std::sin(i*0.22f+phase)+0.16f*std::sin(i*0.055f);
-        const float y=r.getCentreY()-wobble*r.getHeight()*0.9f-juce::jlimit(-1.0f,1.0f,(midi-64.0f)/12.0f)*r.getHeight()*0.25f;
-        if(i==0) p.startNewSubPath(x,y); else p.lineTo(x,y);
+        const float midi = lowMidi + octave * 12.0f;
+        const float y = r.getBottom() - (midi - lowMidi) / (highMidi - lowMidi) * r.getHeight();
+        g.drawHorizontalLine((int) y, r.getX(), r.getRight());
     }
-    g.setColour(CYAN); g.strokePath(p, juce::PathStrokeType(2.0f));
-    labelText(g,"C5",{r.getX()-29,r.getY()-2,27,14},9,MUTED);
-    labelText(g,"A4",{r.getX()-29,r.getY()+r.getHeight()*0.24f,27,14},9,MUTED);
-    labelText(g,"G4",{r.getX()-29,r.getY()+r.getHeight()*0.48f,27,14},9,MUTED);
-    labelText(g,"E4",{r.getX()-29,r.getY()+r.getHeight()*0.72f,27,14},9,MUTED);
-    labelText(g,"C4",{r.getX()-29,r.getBottom()-13,27,14},9,MUTED);
+    for (int i = 1; i < 12; ++i)
+        g.drawVerticalLine((int) (r.getX() + r.getWidth() * i / 12.0f), r.getY(), r.getBottom());
+
+    const float detected = processor.getDetectedMidi();
+    const float target = processor.getTargetMidi();
+
+    auto midiToY = [&r](float midi)
+    {
+        const float clamped = juce::jlimit(36.0f, 84.0f, midi);
+        return r.getBottom() - (clamped - 36.0f) / 48.0f * r.getHeight();
+    };
+
+    auto drawPitch = [&](float midi, juce::Colour colour, float phaseOffset)
+    {
+        if (midi <= 0.0f) return;
+        juce::Path p;
+        for (int i = 0; i < 80; ++i)
+        {
+            const float x = r.getX() + r.getWidth() * i / 79.0f;
+            const float wobble = 0.045f * std::sin(i * 0.22f + phase + phaseOffset)
+                               + 0.025f * std::sin(i * 0.055f);
+            const float y = midiToY(midi + wobble * 12.0f);
+            if (i == 0) p.startNewSubPath(x, y); else p.lineTo(x, y);
+        }
+        g.setColour(colour);
+        g.strokePath(p, juce::PathStrokeType(2.0f));
+    };
+
+    drawPitch(detected, CYAN, 0.0f);
+    drawPitch(target, PURPLE, 1.7f);
+
+    const char* labels[] = { "C2", "C3", "C4", "C5", "C6" };
+    for (int i = 0; i < 5; ++i)
+    {
+        const float y = r.getBottom() - (float) i / 4.0f * r.getHeight();
+        labelText(g, labels[i], { r.getX() - 29.0f, y - 7.0f, 27.0f, 14.0f }, 9.0f, MUTED);
+    }
 }
 
 void VocalForgeAudioProcessorEditor::drawSpectrum(juce::Graphics& g, juce::Rectangle<float> r)
@@ -257,16 +290,16 @@ void VocalForgeAudioProcessorEditor::paint(juce::Graphics& g)
     const float gap=12, y=a.getY()+104, h=350, leftW=230, rightW=250;
     const float centerW=a.getWidth()-leftW-rightW-gap*2;
     drawPanel(g,{a.getX(),y,leftW,h});
-    drawTitle(g,"✦  SMART MIX",a.getX()+18,y+17,200,25);
+    drawTitle(g,"SMART MIX",a.getX()+18,y+17,200,25);
     labelText(g,"Analiza tu voz y aplica",{a.getX()+24,y+64,190,20},14,WHITE);
     labelText(g,"ajustes automáticos para",{a.getX()+24,y+88,190,20},14,WHITE);
     labelText(g,"un resultado profesional.",{a.getX()+24,y+112,190,20},14,WHITE);
 
     const float cx=a.getX()+leftW+gap;
     drawPanel(g,{cx,y,centerW,h});
-    drawTitle(g,"◎  CORRECCIÓN DE AFINACIÓN",cx+18,y+16,centerW-36,26);
+    drawTitle(g,"CORRECCIÓN DE AFINACIÓN",cx+18,y+16,centerW-36,26);
     labelText(g,"Modo",{cx+24,y+50,45,18},12,MUTED);
-    labelText(g,"Natural   |   Modern   |   Hard",{cx+70,y+50,220,18},12,CYAN2);
+    labelText(g,"Natural / Precisa / Rápida",{cx+70,y+50,220,18},12,CYAN2);
     labelText(g,"Style",{cx+305,y+50,45,18},12,MUTED);
     labelText(g,"Clean   Warm   Bright   Aggressive",{cx+355,y+50,250,18},12,CYAN2);
     labelText(g,"Retune",{cx+42,y+205,115,18},12,MUTED,juce::Justification::centred);
@@ -277,7 +310,7 @@ void VocalForgeAudioProcessorEditor::paint(juce::Graphics& g)
 
     const float rx=cx+centerW+gap;
     drawPanel(g,{rx,y,rightW,h});
-    drawTitle(g,"∿  ANÁLISIS VOCAL",rx+16,y+16,rightW-32,26);
+    drawTitle(g,"ANÁLISIS VOCAL",rx+16,y+16,rightW-32,26);
     const float metrics[]={0.98f,0.95f,0.87f,0.64f};
     const char* names[]={"Notas detectadas","Estabilidad de tono","Vibrato natural","Corrección aplicada"};
     for(int i=0;i<4;++i)
@@ -293,21 +326,21 @@ void VocalForgeAudioProcessorEditor::paint(juce::Graphics& g)
 
     const float chainY=y+h+12, chainH=180;
     drawPanel(g,{a.getX(),chainY,a.getWidth(),chainH});
-    drawTitle(g,"↗  CADENA VOCAL",a.getX()+18,chainY+10,a.getWidth()-36,25);
+    drawTitle(g,"CADENA VOCAL",a.getX()+18,chainY+10,a.getWidth()-36,25);
     const float cw=(a.getWidth()-32)/8.0f;
     for(int i=0;i<8;++i) drawPanel(g,{a.getX()+16+i*cw,chainY+42,cw-8,128},8);
 
     const float lowY=chainY+chainH+12, lowH=a.getBottom()-lowY;
     const float specW=a.getWidth()*0.55f;
     drawPanel(g,{a.getX(),lowY,specW,lowH});
-    drawTitle(g,"▥  ESPECTRO VOCAL",a.getX()+18,lowY+8,specW-36,23);
+    drawTitle(g,"ESPECTRO VOCAL",a.getX()+18,lowY+8,specW-36,23);
     drawSpectrum(g,{a.getX()+45,lowY+40,specW-65,juce::jmax(70.0f,lowH-60)});
 
     const float sx=a.getX()+specW+gap, sw=a.getWidth()-specW-gap, stateW=sw*0.70f;
     drawPanel(g,{sx,lowY,stateW,lowH});
-    drawTitle(g,"∿  ESTADO",sx+16,lowY+8,stateW-32,23);
+    drawTitle(g,"ESTADO",sx+16,lowY+8,stateW-32,23);
     labelText(g,processor.getAnalysisSummary(),{sx+42,lowY+42,stateW-58,20},13,GREEN);
-    const char* checks[]={"Pitch Detection","Formant Preservation","Vocal Chain","Smart Mix"};
+    const char* checks[]={"Detección de afinación","Preservación del timbre","Cadena vocal","Smart Mix"};
     for(int i=0;i<4;++i){ g.setColour(GREEN); g.fillEllipse(sx+22,lowY+77+i*23,10,10); labelText(g,checks[i],{sx+42,lowY+72+i*23,stateW-58,20},11,WHITE); }
 
     drawPanel(g,{sx+stateW+gap,lowY,sw-stateW-gap,lowH});
