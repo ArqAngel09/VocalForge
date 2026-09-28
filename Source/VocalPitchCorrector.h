@@ -49,6 +49,8 @@ private:
 
     Grain grains_[2];
     float currentRatio_ = 1.0f;
+    double nextGrainReadPos_ = 0.0;
+    bool pitchReadInitialised_ = false;
     float correction_ = 1.0f;
     float speedMs_ = 45.0f;
     int root_ = 0;
