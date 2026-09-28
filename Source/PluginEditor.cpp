@@ -316,8 +316,7 @@ void VocalForgeAudioProcessorEditor::paint(juce::Graphics& g)
         g.setColour(juce::Colour(0xff17242e)); g.fillEllipse(cx-78,cy-78,156,156);
         g.setColour(CYAN); g.drawEllipse(cx-78,cy-78,156,156,2.0f);
         g.setColour(juce::Colour(0xff0e1820)); g.fillEllipse(cx-61,cy-61,122,122);
-        text(g,"ESCUCHAR",{cx-58,cy-15,116,24},17,WHITE,juce::Justification::centred);
-        text(g,"mi voz",{cx-45,cy+10,90,18},11,CYAN2,juce::Justification::centred);
+        text(g,"15 s",{cx-30,cy-12,60,20},10,MUTED,juce::Justification::centred);
 
         const float progress=processor.getAnalysisProgress();
         text(g,juce::String((int)std::round(progress*100.0f))+"%",{cx-40,cy+130,80,24},18,WHITE,juce::Justification::centred);
@@ -406,7 +405,7 @@ void VocalForgeAudioProcessorEditor::resized()
     simpleTab.setBounds((int)(a.getRight()-204),(int)a.getY()+11,90,40);
     advancedTab.setBounds((int)(a.getRight()-112),(int)a.getY()+11,112,40);
 
-    analyzeButton.setBounds((int)a.getCentreX()-105,(int)y+315,210,44);
+    analyzeButton.setBounds((int)a.getCentreX()-78,(int)(y+188),156,46);
     autoButton.setBounds((int)a.getCentreX()+120,(int)y+315,82,44);
     bypassButton.setBounds((int)a.getX()+20,(int)a.getY()+10,80,40);
 
