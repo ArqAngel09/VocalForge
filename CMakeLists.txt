@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(VocalForge VERSION 1.0.0 LANGUAGES CXX)
+project(VocalForge VERSION 1.0.0 LANGUAGES C CXX)
 
 include(FetchContent)
 FetchContent_Declare(
