@@ -226,7 +226,7 @@ void VocalForgeAudioProcessorEditor::drawKnobInfo(juce::Graphics& g,juce::Slider
 void VocalForgeAudioProcessorEditor::drawPitchGraph(juce::Graphics& g,juce::Rectangle<float> r)
 {
     g.setColour(juce::Colour(0xff09131b)); g.fillRoundedRectangle(r,6.0f);
-    constexpr float low=36.0f, high=84.0f;
+    constexpr float low=24.0f, high=96.0f;
     g.setColour(juce::Colour(0xff21333f));
     for(int i=0;i<=4;++i)
     {
@@ -235,7 +235,7 @@ void VocalForgeAudioProcessorEditor::drawPitchGraph(juce::Graphics& g,juce::Rect
         text(g,"C"+juce::String(2+i),{r.getX()+6,y-9,28,18},9,MUTED);
     }
     const float detected=processor.getDetectedMidi(), target=processor.getTargetMidi();
-    auto py=[&](float midi){ return r.getBottom()-juce::jlimit(36.0f,84.0f,midi-36.0f)/48.0f*r.getHeight(); };
+    auto py=[&](float midi){ return r.getBottom()-juce::jlimit(24.0f,96.0f,midi-24.0f)/72.0f*r.getHeight(); };
     if(detected>0.0f)
     {
         juce::Path p;
@@ -301,7 +301,7 @@ void VocalForgeAudioProcessorEditor::paint(juce::Graphics& g)
     if(activePage==0)
     {
         drawPanel(g,{a.getX(),y,a.getWidth(),a.getHeight()-76},12);
-        text(g,"VOCAL ASSIST",{a.getX()+26,y+22,180,22},15,WHITE);
+        text(g,"VOCAL ENGINE",{a.getX()+26,y+22,180,22},15,WHITE);
         text(g,"Escucha una toma de voz y deja que AMR Vocal Mix configure el procesamiento.",{a.getX()+26,y+50,a.getWidth()-52,20},11,MUTED);
 
         const float cx=a.getCentreX(), cy=y+215, radius=112.0f;
@@ -331,7 +331,7 @@ void VocalForgeAudioProcessorEditor::paint(juce::Graphics& g)
     else if(activePage==1)
     {
         drawPanel(g,{a.getX(),y,a.getWidth(),a.getHeight()-76},12);
-        text(g,"SIMPLE",{a.getX()+26,y+22,120,22},15,WHITE);
+        text(g,"QUICK",{a.getX()+26,y+22,120,22},15,WHITE);
         text(g,"Los controles esenciales para ajustar una voz rápidamente.",{a.getX()+26,y+48,360,18},11,MUTED);
         text(g,"AFINACIÓN",{a.getX()+45,y+82,130,18},10,CYAN2);
         text(g,"TONO",{a.getCentreX()+20,y+82,100,18},10,CYAN2);
@@ -352,7 +352,7 @@ void VocalForgeAudioProcessorEditor::paint(juce::Graphics& g)
     else
     {
         drawPanel(g,{a.getX(),y,a.getWidth(),a.getHeight()-76},12);
-        drawTitle(g,"ADVANCED",a.getX()+22,y+18,150,22);
+        drawTitle(g,"PRO",a.getX()+22,y+18,150,22);
         text(g,"Afinación, tono y cadena vocal completa",{a.getX()+22,y+42,300,18},10,MUTED);
         drawPitchGraph(g,{a.getX()+22,y+68,a.getWidth()*.43f,78});
         drawSpectrum(g,{a.getX()+a.getWidth()*.46f,y+68,a.getWidth()*.50f,78});
