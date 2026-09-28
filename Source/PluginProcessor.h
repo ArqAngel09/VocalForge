@@ -1,0 +1,69 @@
+#pragma once
+#include <JuceHeader.h>
+
+class VocalForgeAudioProcessor : public juce::AudioProcessor
+{
+public:
+    VocalForgeAudioProcessor();
+    ~VocalForgeAudioProcessor() override = default;
+
+    void prepareToPlay (double sampleRate, int samplesPerBlock) override;
+    void releaseResources() override;
+    bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
+    void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+
+    juce::AudioProcessorEditor* createEditor() override;
+    bool hasEditor() const override { return true; }
+
+    const juce::String getName() const override { return "VocalForge"; }
+    bool acceptsMidi() const override { return false; }
+    bool producesMidi() const override { return false; }
+    bool isMidiEffect() const override { return false; }
+    double getTailLengthSeconds() const override { return 2.5; }
+    int getNumPrograms() override { return 1; }
+    int getCurrentProgram() override { return 0; }
+    void setCurrentProgram (int) override {}
+    const juce::String getProgramName (int) override { return {}; }
+    void changeProgramName (int, const juce::String&) override {}
+    void getStateInformation (juce::MemoryBlock&) override;
+    void setStateInformation (const void*, int) override;
+
+    static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+    juce::AudioProcessorValueTreeState apvts;
+
+    void triggerAnalysis();
+    bool isAnalysisReady() const { return analysisReady.exchange(false); }
+    float getAnalysisProgress() const;
+    juce::String getAnalysisSummary() const;
+
+private:
+    struct Analysis
+    {
+        double seconds = 0.0;
+        double sumSq = 0.0;
+        double peak = 0.0;
+        double low = 0.0, mid = 0.0, high = 0.0;
+        uint64_t samples = 0;
+        void reset() { *this = {}; }
+    };
+
+    void analyseBlock(const juce::AudioBuffer<float>& buffer);
+    void applySmartMix();
+
+    double currentSampleRate = 44100.0;
+    juce::dsp::IIR::Filter<float> hpFilterL, hpFilterR;
+    juce::dsp::IIR::Filter<float> presenceFilterL, presenceFilterR;
+    juce::dsp::IIR::Filter<float> airFilterL, airFilterR;
+    juce::dsp::Compressor<float> compressorL, compressorR;
+    juce::dsp::Limiter<float> limiterL, limiterR;
+    juce::Reverb reverb;
+    juce::Reverb::Parameters reverbParams;
+    juce::AudioBuffer<float> wetBuffer;
+    juce::SmoothedValue<float> inputGain, outputGain, drive, reverbMix;
+    std::atomic<float> progress { 0.0f };
+    std::atomic<bool> analysisReady { false };
+    std::atomic<bool> analysisRequested { false };
+    Analysis analysis;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (VocalForgeAudioProcessor)
+};
