@@ -238,7 +238,19 @@ void VocalForgeAudioProcessorEditor::setupSlider(juce::Slider& s, const juce::St
     s.setName(name);
     s.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
     s.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-    s.setRange(0.0, 1.0);
+    if (name == "Retune" || name == "Compression" || name == "Saturation" || name == "De-Esser" ||
+        name == "Reverb" || name == "Delay" || name == "Magic" || name == "Color" ||
+        name == "Exciter" || name == "Doubler" || name == "Denoise" || name == "Resonance" ||
+        name == "Multiband" || name == "Feedback" || name == "Tone")
+        s.setRange(0.0, 100.0, 0.1);
+    else if (name == "Speed") s.setRange(5.0, 250.0, 0.1);
+    else if (name == "Body" || name == "Presence" || name == "Air") s.setRange(-6.0, 10.0, 0.1);
+    else if (name == "Output") s.setRange(-12.0, 6.0, 0.1);
+    else if (name == "Low" || name == "Low-Mid" || name == "High-Mid" || name == "High") s.setRange(-6.0, 6.0, 0.1);
+    else if (name == "Time") s.setRange(0.2, 6.0, 0.01);
+    else if (name == "Focus") s.setRange(2000.0, 10000.0, 1.0);
+    else if (name == "Attack") s.setRange(1.0, 50.0, 0.1);
+    else if (name == "Release") s.setRange(50.0, 500.0, 1.0);
     addAndMakeVisible(s);
 }
 
@@ -414,7 +426,8 @@ void VocalForgeAudioProcessorEditor::drawEqGraph(juce::Graphics& g, juce::Rectan
 void VocalForgeAudioProcessorEditor::layoutKnobGrid(std::initializer_list<juce::Slider*> sliders)
 {
     for (auto* s : sliders) s->setVisible(false);
-    const auto area = getLocalBounds().reduced(32).withTop(260).withBottom(getHeight()-38);
+    const int top = activePage == 2 ? 360 : 260;
+    const auto area = getLocalBounds().reduced(32).withTop(top).withBottom(getHeight()-38);
     const int count = (int) sliders.size();
     const int cols = count <= 3 ? count : 3;
     const int rows = (count + cols - 1) / cols;
