@@ -79,7 +79,7 @@ jobs:
       - name: Generate VST3 provenance attestation
         uses: actions/attest@v4
         with:
-          subject-path: build\VocalForge_artefacts\Release\VST3\AMR Vocal Mix.vst3\**\*.dll
+          subject-path: build\VocalForge_artefacts\Release\VST3\AMR Vocal Mix.vst3\Contents\x86_64-win\AMR Vocal Mix.vst3
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
