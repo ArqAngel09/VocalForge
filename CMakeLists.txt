@@ -26,6 +26,8 @@ juce_add_plugin(VocalForge
     VST3_CATEGORIES Fx
 )
 
+juce_generate_juce_header(VocalForge)
+
 target_sources(VocalForge PRIVATE
     Source/PluginProcessor.cpp
     Source/PluginProcessor.h
