@@ -122,7 +122,7 @@ VocalForgeAudioProcessorEditor::VocalForgeAudioProcessorEditor(VocalForgeAudioPr
     setResizeLimits(860, 620, 1600, 1000);
 
     for (auto* b : { &vocalAssistTab, &simpleTab, &advancedTab, &analyzeButton, &bypassButton,
-                     &compareButton, &retryButton, &dynamicsTab, &eqTab, &spaceTab, &characterTab, &graphTab })
+                     &compareButton, &retryButton, &autoGainButton, &dynamicsTab, &eqTab, &spaceTab, &characterTab, &graphTab })
         addAndMakeVisible(b);
 
     vocalAssistTab.setClickingTogglesState(true);
@@ -143,6 +143,7 @@ VocalForgeAudioProcessorEditor::VocalForgeAudioProcessorEditor(VocalForgeAudioPr
     characterTab.onClick = [this]{ setModule(3); };
     graphTab.onClick = [this]{ setModule(4); };
 
+    analyzeButton.setButtonText("ESCUCHAR Y ANALIZAR");
     analyzeButton.onClick = [this]{ processor.triggerAnalysis(); };
     retryButton.onClick = [this]{ processor.triggerAnalysis(); };
     compareButton.setClickingTogglesState(true);
@@ -156,6 +157,9 @@ VocalForgeAudioProcessorEditor::VocalForgeAudioProcessorEditor(VocalForgeAudioPr
     bypassButton.setClickingTogglesState(true);
     bypassAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
         processor.apvts, "bypass", bypassButton);
+    autoGainButton.setClickingTogglesState(true);
+    autoGainAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
+        processor.apvts, "autoGain", autoGainButton);
 
     title.setText("AMR Vocal Mix", juce::dontSendNotification);
     subtitle.setText("PRO VOCAL PROCESSOR", juce::dontSendNotification);
@@ -426,7 +430,7 @@ void VocalForgeAudioProcessorEditor::drawEqGraph(juce::Graphics& g, juce::Rectan
 void VocalForgeAudioProcessorEditor::layoutKnobGrid(std::initializer_list<juce::Slider*> sliders)
 {
     for (auto* s : sliders) s->setVisible(false);
-    const int top = activePage == 2 ? 360 : 260;
+    const int top = 305;
     const auto area = getLocalBounds().reduced(32).withTop(top).withBottom(getHeight()-38);
     const int count = (int) sliders.size();
     const int cols = count <= 3 ? count : 3;
@@ -470,14 +474,17 @@ void VocalForgeAudioProcessorEditor::paint(juce::Graphics& g)
         labelText(g,"ORIGINAL",{a.getCentreX()-145,y+420,90,18},9,MUTED,juce::Justification::centred);
         labelText(g,"ASISTIDA",{a.getCentreX()-45,y+420,90,18},9,CYAN2,juce::Justification::centred);
         labelText(g,"REINICIAR",{a.getCentreX()+55,y+420,90,18},9,WHITE,juce::Justification::centred);
-        labelText(g,processor.getAnalysisSummary(),{a.getX()+120,a.getBottom()-38,a.getWidth()-240,20},10,GREEN,juce::Justification::centred);
+        labelText(g,processor.getAnalysisSummary(),{a.getX()+120,a.getBottom()-48,a.getWidth()-240,20},10,GREEN,juce::Justification::centred);
+        const auto gm = processor.getGainMatchDb();
+        labelText(g, processor.isAutoGainEnabled() ? ("AUTO GAIN  " + juce::String(gm,1) + " dB") : "AUTO GAIN OFF",
+                  {a.getX()+120,a.getBottom()-25,a.getWidth()-240,18},9, processor.isAutoGainEnabled() ? CYAN2 : MUTED, juce::Justification::centred);
     }
     else if(activePage==1)
     {
         labelText(g,"SIMPLE",{a.getX()+28,y+20,150,22},15,WHITE);
         labelText(g,"Cuatro macros directos para llegar rápido al punto de partida.",{a.getX()+28,y+47,430,18},10.5f,MUTED);
         drawPitchGraph(g,{a.getX()+28,y+72,a.getWidth()-56,130});
-        labelText(g,"PITCH / VOICE PROFILE",{a.getX()+42,y+82,220,16},9,CYAN2);
+        labelText(g,"PITCH / VOICE PROFILE",{a.getX()+42,y+55,220,16},9,CYAN2);
     }
     else
     {
@@ -486,11 +493,6 @@ void VocalForgeAudioProcessorEditor::paint(juce::Graphics& g)
         drawPitchGraph(g,{a.getX()+28,y+72,a.getWidth()*.54f,128});
         drawSpectrum(g,{a.getX()+a.getWidth()*.56f,y+72,a.getWidth()*.40f,128});
         labelText(g,"MODULE",{a.getX()+28,y+213,100,16},9,CYAN2);
-        if(activeModule==0) labelText(g,"DYNAMICS",{a.getX()+28,y+233,160,20},12,WHITE);
-        if(activeModule==1) labelText(g,"EQ / TONE",{a.getX()+28,y+233,160,20},12,WHITE);
-        if(activeModule==2) labelText(g,"SPACE",{a.getX()+28,y+233,160,20},12,WHITE);
-        if(activeModule==3) labelText(g,"CHARACTER",{a.getX()+28,y+233,160,20},12,WHITE);
-        if(activeModule==4) labelText(g,"EQ GRAPH",{a.getX()+28,y+233,160,20},12,WHITE);
         if(activeModule==4) drawEqGraph(g,{a.getX()+215,y+218,a.getWidth()-245,135});
     }
 }
@@ -567,23 +569,24 @@ void VocalForgeAudioProcessorEditor::resized()
         hideSlider(*s);
 
     for(auto* c : {&key,&scale,&mode,&style,&reverbType,&delaySubdivision}) c->setVisible(false);
-    for(auto* b : {&dynamicsTab,&eqTab,&spaceTab,&characterTab,&graphTab,&analyzeButton,&compareButton,&retryButton})
+    for(auto* b : {&dynamicsTab,&eqTab,&spaceTab,&characterTab,&graphTab,&analyzeButton,&compareButton,&retryButton,&autoGainButton})
         b->setVisible(false);
 
     if(activePage==0)
     {
-        analyzeButton.setVisible(true); analyzeButton.setBounds(a.getCentreX()-100,y+340,200,44);
-        compareButton.setVisible(true); compareButton.setBounds(a.getCentreX()-155,y+400,95,34);
-        retryButton.setVisible(true); retryButton.setBounds(a.getCentreX()+60,y+400,105,34);
+        analyzeButton.setVisible(true); analyzeButton.setBounds(a.getCentreX()-135,y+335,270,46);
+        compareButton.setVisible(true); compareButton.setBounds(a.getCentreX()-175,y+395,105,34);
+        retryButton.setVisible(true); retryButton.setBounds(a.getCentreX()+70,y+395,105,34);
+        autoGainButton.setVisible(true); autoGainButton.setBounds(a.getRight()-170,y+18,135,32);
     }
     else if(activePage==1)
     {
-        layoutKnobGrid({&comp,&magic,&space,&delay});
+        layoutKnobGrid({&retune,&speed,&comp,&magic,&space,&delay});
     }
     else
     {
         dynamicsTab.setVisible(true); eqTab.setVisible(true); spaceTab.setVisible(true); characterTab.setVisible(true); graphTab.setVisible(true);
-        const int bx=a.getX()+205, by=y+210;
+        const int bx=a.getX()+205, by=y+245;
         dynamicsTab.setBounds(bx,by,112,32); eqTab.setBounds(bx+116,by,72,32);
         spaceTab.setBounds(bx+192,by,84,32); characterTab.setBounds(bx+280,by,108,32); graphTab.setBounds(bx+392,by,96,32);
 
@@ -605,8 +608,8 @@ void VocalForgeAudioProcessorEditor::resized()
     if(adv)
     {
         key.setVisible(true); scale.setVisible(true); mode.setVisible(true); style.setVisible(true);
-        key.setBounds(a.getX()+28,y+170,95,30); scale.setBounds(a.getX()+128,y+170,105,30);
-        mode.setBounds(a.getX()+238,y+170,95,30); style.setBounds(a.getX()+338,y+170,110,30);
+        key.setBounds(a.getX()+28,y+205,95,30); scale.setBounds(a.getX()+128,y+205,105,30);
+        mode.setBounds(a.getX()+238,y+205,95,30); style.setBounds(a.getX()+338,y+205,110,30);
     }
 }
 
