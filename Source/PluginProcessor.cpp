@@ -101,6 +101,7 @@ void VocalForgeAudioProcessor::prepareToPlay(double sr, int samplesPerBlock)
     analysisReady.store(false);
     analysisRequested.store(false);
     analysisRunning.store(false);
+    analysisUpdateSamples = 0;
     bypass.store(false, std::memory_order_release);
     filtersInitialised = false;
     reverbInitialised = false;
@@ -161,7 +162,17 @@ void VocalForgeAudioProcessor::triggerAnalysis()
     analysis.reset();
     progress.store(0.0f, std::memory_order_release);
     analysisReady.store(false, std::memory_order_release);
-    smartMixActive.store(false, std::memory_order_release);
+    analysisUpdateSamples = 0;
+    // Activate a safe processing profile immediately; the 15-second capture refines it.
+    smartInputTrim.store(0.0f, std::memory_order_relaxed);
+    smartBody.store(0.0f, std::memory_order_relaxed);
+    smartPresence.store(2.0f, std::memory_order_relaxed);
+    smartAir.store(2.0f, std::memory_order_relaxed);
+    smartComp.store(52.0f, std::memory_order_relaxed);
+    smartDrive.store(10.0f, std::memory_order_relaxed);
+    smartDeess.store(32.0f, std::memory_order_relaxed);
+    smartSpace.store(14.0f, std::memory_order_relaxed);
+    smartMixActive.store(true, std::memory_order_release);
     analysisRunning.store(true, std::memory_order_release);
     analysisRequested.store(true, std::memory_order_release);
 }
@@ -229,7 +240,17 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
     }
 
     if (analysisRunning.load(std::memory_order_acquire))
+    {
         analyseBlock(buffer);
+        analysisUpdateSamples += buffer.getNumSamples();
+        // Refresh the Smart profile at a low rate while listening so the user hears
+        // the analysis working, without recalculating the profile every audio block.
+        if (analysisUpdateSamples >= (int) std::round(currentSampleRate * 0.25))
+        {
+            analysisUpdateSamples = 0;
+            applySmartMix();
+        }
+    }
     if (isAnalysisReady())
         applySmartMix();
 
@@ -399,15 +420,15 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
 
         auto* data = b.getWritePointer(c);
         const float driveAmount = sat / 100.0f;
-        const float driveNorm = std::max(1.0f, std::tanh(1.0f + driveAmount * 2.2f));
-
-        for (int i = 0; i < n; ++i)
+                for (int i = 0; i < n; ++i)
         {
             const float x = data[i] * makeupGain;
             const float character = magicDrive / 100.0f;
-            const float shaped = std::tanh(x * (1.0f + driveAmount * 2.2f + character * 1.1f));
-            const float dry = x;
-            data[i] = (shaped / driveNorm) * (0.65f + character * 0.35f) + dry * (0.35f - character * 0.10f);
+            const float driveK = 1.0f + driveAmount * 2.2f + character * 1.1f;
+            // Unity-gain soft clip: the old normalization boosted low-level material.
+            const float shaped = std::tanh(x * driveK) / driveK;
+            const float wet = juce::jlimit(0.0f, 1.0f, 0.55f + character * 0.25f);
+            data[i] = x * (1.0f - wet) + shaped * wet;
             if (denoise > 0.01f)
             {
                 const float gate = juce::jmap(denoise, 0.0f, 100.0f, 0.015f, 0.08f);
