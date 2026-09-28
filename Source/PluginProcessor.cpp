@@ -35,6 +35,27 @@ APVTS::ParameterLayout VocalForgeAudioProcessor::createParameterLayout()
     p.push_back(std::make_unique<juce::AudioParameterFloat>("space", "Space", juce::NormalisableRange<float>(0.f, 100.f, 0.01f), 14.f));
     p.push_back(std::make_unique<juce::AudioParameterFloat>("delay", "Delay", juce::NormalisableRange<float>(0.f, 100.f, 0.01f), 0.f));
     p.push_back(std::make_unique<juce::AudioParameterFloat>("output", "Output", juce::NormalisableRange<float>(-12.f, 6.f, 0.01f), -0.8f));
+
+    // Fresh-style functional modules, implemented natively for AMR.
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("magic", "Magic", juce::NormalisableRange<float>(0.f, 100.f, 0.1f), 26.8f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("color", "Color", juce::NormalisableRange<float>(0.f, 100.f, 0.1f), 50.f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("eqLow", "EQ Low", juce::NormalisableRange<float>(-6.f, 6.f, 0.1f), 0.f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("eqLowMid", "EQ Low-Mid", juce::NormalisableRange<float>(-6.f, 6.f, 0.1f), 0.f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("eqHighMid", "EQ High-Mid", juce::NormalisableRange<float>(-6.f, 6.f, 0.1f), 0.f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("eqHigh", "EQ High", juce::NormalisableRange<float>(-6.f, 6.f, 0.1f), 0.f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("spaceTime", "Space Time", juce::NormalisableRange<float>(0.2f, 6.f, 0.01f), 1.8f));
+    p.push_back(std::make_unique<juce::AudioParameterChoice>("reverbType", "Reverb Type", juce::StringArray{"Room","Plate","Large"}, 0));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("exciter", "Exciter", juce::NormalisableRange<float>(0.f, 100.f, 0.1f), 2.8f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("doubler", "Doubler", juce::NormalisableRange<float>(0.f, 100.f, 0.1f), 0.f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("denoise", "Denoise", juce::NormalisableRange<float>(0.f, 100.f, 0.1f), 0.f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("resonance", "Resonance Suppressor", juce::NormalisableRange<float>(0.f, 100.f, 0.1f), 0.f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("multiband", "Multiband", juce::NormalisableRange<float>(0.f, 100.f, 0.1f), 0.f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("delayFeedback", "Delay Feedback", juce::NormalisableRange<float>(0.f, 80.f, 0.1f), 47.5f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("delayTone", "Delay Tone", juce::NormalisableRange<float>(0.f, 100.f, 0.1f), 22.7f));
+    p.push_back(std::make_unique<juce::AudioParameterChoice>("delaySubdivision", "Delay Subdivision", juce::StringArray{"1/16","1/8","1/4"}, 2));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("deessFocus", "De-Esser Focus", juce::NormalisableRange<float>(2000.f, 10000.f, 1.f), 5000.f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("compAttack", "Comp Attack", juce::NormalisableRange<float>(1.f, 50.f, 0.1f), 10.f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("compRelease", "Comp Release", juce::NormalisableRange<float>(50.f, 500.f, 1.f), 180.f));
     p.push_back(std::make_unique<juce::AudioParameterBool>("bypass", "Bypass", false));
     p.push_back(std::make_unique<juce::AudioParameterBool>("auto", "Auto after 15 seconds", true));
     p.push_back(std::make_unique<juce::AudioParameterChoice>("style", "Style", styleChoices(), 1));
@@ -60,6 +81,9 @@ void VocalForgeAudioProcessor::prepareToPlay(double sr, int samplesPerBlock)
     delayBuffer.setSize(2, (int)std::ceil(sr * 2.0));
     delayBuffer.clear();
     delayWritePos = 0;
+    doublerBuffer.setSize(2, (int) std::ceil(sr * 0.08));
+    doublerBuffer.clear();
+    doublerWritePos = 0;
 
     inputGain.reset(sr, 0.03);
     outputGain.reset(sr, 0.03);
@@ -67,6 +91,8 @@ void VocalForgeAudioProcessor::prepareToPlay(double sr, int samplesPerBlock)
     drive.reset(sr, 0.03);
     reverbMix.reset(sr, 0.05);
     delayMix.reset(sr, 0.05);
+    exciterMix.reset(sr, 0.03);
+    doublerMix.reset(sr, 0.03);
     deEssGain.reset(sr, 0.02);
 
     pitchCorrector.prepare(sr, samplesPerBlock);
@@ -78,6 +104,8 @@ void VocalForgeAudioProcessor::prepareToPlay(double sr, int samplesPerBlock)
     bypass.store(false, std::memory_order_release);
     filtersInitialised = false;
     reverbInitialised = false;
+    advancedFiltersInitialised = false;
+    lastEqLow = lastEqLowMid = lastEqHighMid = lastColor = lastDeessFocus = lastReverbDecay = 999.0f;
     lastBodyDb = lastPresDb = lastAirDb = lastComp = lastSpace = 999.0f;
     deEssEnvelopeL = 0.0f;
     deEssEnvelopeR = 0.0f;
