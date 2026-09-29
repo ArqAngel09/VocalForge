@@ -20,16 +20,16 @@ APVTS::ParameterLayout VocalForgeAudioProcessor::createParameterLayout()
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> p;
 
     p.push_back(std::make_unique<juce::AudioParameterFloat>("input", "Input", juce::NormalisableRange<float>(-18.f, 12.f, 0.01f), 0.f));
-    p.push_back(std::make_unique<juce::AudioParameterFloat>("retune", "Retune", juce::NormalisableRange<float>(0.f, 100.f, 0.01f), 72.f));
-    p.push_back(std::make_unique<juce::AudioParameterFloat>("speed", "Retune Speed", juce::NormalisableRange<float>(5.f, 250.f, 0.1f), 55.f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("retune", "Retune", juce::NormalisableRange<float>(0.f, 100.f, 0.01f), 62.f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("speed", "Retune Speed", juce::NormalisableRange<float>(5.f, 250.f, 0.1f), 72.f));
     p.push_back(std::make_unique<juce::AudioParameterChoice>("root", "Key", rootChoices(), 0));
     p.push_back(std::make_unique<juce::AudioParameterChoice>("scale", "Scale", scaleChoices(), 0));
     p.push_back(std::make_unique<juce::AudioParameterChoice>("mode", "Mode", modeChoices(), 0));
 
     p.push_back(std::make_unique<juce::AudioParameterFloat>("body", "Body", juce::NormalisableRange<float>(-6.f, 6.f, 0.01f), 0.f));
-    p.push_back(std::make_unique<juce::AudioParameterFloat>("presence", "Presence", juce::NormalisableRange<float>(-6.f, 8.f, 0.01f), 2.f));
-    p.push_back(std::make_unique<juce::AudioParameterFloat>("air", "Air", juce::NormalisableRange<float>(-6.f, 10.f, 0.01f), 2.f));
-    p.push_back(std::make_unique<juce::AudioParameterFloat>("comp", "Compression", juce::NormalisableRange<float>(0.f, 100.f, 0.01f), 52.f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("presence", "Presence", juce::NormalisableRange<float>(-6.f, 8.f, 0.01f), 1.5f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("air", "Air", juce::NormalisableRange<float>(-6.f, 10.f, 0.01f), 1.5f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("comp", "Compression", juce::NormalisableRange<float>(0.f, 100.f, 0.01f), 42.f));
     p.push_back(std::make_unique<juce::AudioParameterFloat>("drive", "Saturation", juce::NormalisableRange<float>(0.f, 100.f, 0.01f), 10.f));
     p.push_back(std::make_unique<juce::AudioParameterFloat>("deess", "De-Esser", juce::NormalisableRange<float>(0.f, 100.f, 0.01f), 32.f));
     p.push_back(std::make_unique<juce::AudioParameterFloat>("space", "Space", juce::NormalisableRange<float>(0.f, 100.f, 0.01f), 14.f));
@@ -89,7 +89,7 @@ void VocalForgeAudioProcessor::prepareToPlay(double sr, int samplesPerBlock)
     inputGain.reset(sr, 0.03);
     outputGain.reset(sr, 0.03);
     vocalMakeupGain.reset(sr, 0.05);
-    autoGainTrim.reset(sr, 0.08);
+    autoGainTrim.reset(sr, 0.15);
     autoGainTrim.setCurrentAndTargetValue(1.0f);
     drive.reset(sr, 0.03);
     reverbMix.reset(sr, 0.05);
@@ -582,8 +582,10 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
 
     const float outRmsPreGuard = (float) std::sqrt(outSqPreGuard / (double) std::max(1, n * ch));
     const float requestedLinear = juce::Decibels::decibelsToGain(outputDbParam);
-    const float targetRms = std::max(1.0e-5f, inRms * requestedLinear * 1.01f);
-    const float targetPeak = std::max(1.0e-4f, inPeak * requestedLinear * 0.98f);
+    // Auto Gain Match is an attenuation-only safety stage. It intentionally targets
+    // slightly below the incoming level so inserting AMR cannot make the track louder.
+    const float targetRms = std::max(1.0e-5f, inRms * requestedLinear * 0.96f);
+    const float targetPeak = std::max(1.0e-4f, inPeak * requestedLinear * 0.94f);
     float guardGain = 1.0f;
     if (autoGain && inRms > 1.0e-5f && outRmsPreGuard > targetRms)
         guardGain = std::min(guardGain, targetRms / outRmsPreGuard);
