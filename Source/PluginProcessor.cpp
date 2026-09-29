@@ -264,7 +264,31 @@ void VocalForgeAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, ju
         }
     }
     if (isAnalysisReady())
+    {
         applySmartMix();
+
+        // Commit the intelligent profile into the real APVTS parameters.
+        // Simple, Advanced and Vocal Assist therefore edit the same state,
+        // and manual changes immediately take over after analysis.
+        const auto commitSmart = [this](const char* id, float v)
+        {
+            if (auto* p = apvts.getParameter(id))
+                p->setValueNotifyingHost(p->convertTo0to1(v));
+        };
+
+        commitSmart("input", smartInputTrim.load(std::memory_order_relaxed));
+        commitSmart("retune", smartRetune.load(std::memory_order_relaxed));
+        commitSmart("speed", smartSpeed.load(std::memory_order_relaxed));
+        commitSmart("body", smartBody.load(std::memory_order_relaxed));
+        commitSmart("presence", smartPresence.load(std::memory_order_relaxed));
+        commitSmart("air", smartAir.load(std::memory_order_relaxed));
+        commitSmart("comp", smartComp.load(std::memory_order_relaxed));
+        commitSmart("drive", smartDrive.load(std::memory_order_relaxed));
+        commitSmart("deess", smartDeess.load(std::memory_order_relaxed));
+        commitSmart("space", smartSpace.load(std::memory_order_relaxed));
+
+        smartMixActive.store(false, std::memory_order_release);
+    }
 
     const int n = buffer.getNumSamples();
     const int ch = buffer.getNumChannels();
